@@ -14,7 +14,7 @@ use std::{
 
 use derive_where::derive_where;
 use fnv::FnvBuildHasher;
-use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{MappedMutexGuard, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::{
 	debug::{
@@ -101,6 +101,25 @@ impl Universe {
 
 	pub fn archetype_by_id(&self, id: ArchetypeId) -> &Mutex<Archetype> {
 		&self.archetypes[&id].archetype
+	}
+
+	pub fn archetype_by_handle<M: ?Sized>(
+		&self,
+		handle: ArchetypeHandle<M>,
+	) -> MappedMutexGuard<Archetype<M>> {
+		MutexGuard::map(
+			self.archetype_by_id(handle.id()).try_lock().unwrap(),
+			|arch| arch.cast_marker_mut(),
+		)
+	}
+
+	pub fn archetype_by_handle_blocking<M: ?Sized>(
+		&self,
+		handle: ArchetypeHandle<M>,
+	) -> MappedMutexGuard<Archetype<M>> {
+		MutexGuard::map(self.archetype_by_id(handle.id()).lock(), |arch| {
+			arch.cast_marker_mut()
+		})
 	}
 
 	pub fn add_archetype_meta<T: 'static + Send + Sync>(&self, id: ArchetypeId, value: T) {
