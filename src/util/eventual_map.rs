@@ -144,10 +144,6 @@ where
 		value
 	}
 
-	pub fn insert(&mut self, key: K, value: Box<V>) {
-		self.established.insert(key, value);
-	}
-
 	pub fn remove<Q>(&mut self, key: &Q) -> Option<Box<V>>
 	where
 		Q: ?Sized + hash::Hash + Eq,

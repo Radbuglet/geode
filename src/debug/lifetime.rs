@@ -1,7 +1,5 @@
 use std::{borrow::Borrow, cmp::Ordering, fmt, hash, num::NonZeroU64};
 
-use crate::util::drop_guard::DropOwned;
-
 use super::label::{DebugLabel, ReifiedDebugLabel};
 
 // === Global === //
@@ -350,64 +348,68 @@ impl PartialOrd for DebugLifetime {
 
 // === Wrapper traits === //
 
-pub trait LifetimeLike {
-	fn is_possibly_alive(&self) -> bool;
-	fn is_condemned(&self) -> bool;
-	fn inc_dep(&self);
-	fn dec_dep(&self);
+pub trait LifetimeLike: Copy {
+	fn is_possibly_alive(self) -> bool;
+	fn is_condemned(self) -> bool;
+	fn inc_dep(self);
+	fn dec_dep(self);
+}
+
+pub trait DestructibleLifetime: LifetimeLike {
+	fn destroy(self);
 }
 
 impl LifetimeLike for Lifetime {
-	fn is_possibly_alive(&self) -> bool {
+	fn is_possibly_alive(self) -> bool {
 		self.is_alive()
 	}
 
-	fn is_condemned(&self) -> bool {
+	fn is_condemned(self) -> bool {
 		// Name resolution prioritizes inherent method of the same name.
-		(*self).is_condemned()
+		self.is_condemned()
 	}
 
-	fn inc_dep(&self) {
+	fn inc_dep(self) {
 		// Name resolution prioritizes inherent method of the same name.
-		(*self).inc_dep();
+		self.inc_dep();
 	}
 
-	fn dec_dep(&self) {
+	fn dec_dep(self) {
 		// Name resolution prioritizes inherent method of the same name.
-		(*self).dec_dep();
+		self.dec_dep();
 	}
 }
 
-impl DropOwned for Lifetime {
-	fn drop_owned(self, _cx: ()) {
+impl DestructibleLifetime for Lifetime {
+	fn destroy(self) {
 		self.destroy()
 	}
 }
 
 impl LifetimeLike for DebugLifetime {
-	fn is_possibly_alive(&self) -> bool {
+	fn is_possibly_alive(self) -> bool {
 		// Name resolution prioritizes inherent method of the same name.
-		(*self).is_possibly_alive()
+		self.is_possibly_alive()
 	}
 
-	fn is_condemned(&self) -> bool {
+	fn is_condemned(self) -> bool {
 		// Name resolution prioritizes inherent method of the same name.
-		(*self).is_condemned()
+		self.is_condemned()
 	}
 
-	fn inc_dep(&self) {
+	fn inc_dep(self) {
 		// Name resolution prioritizes inherent method of the same name.
-		(*self).inc_dep();
+		self.inc_dep();
 	}
 
-	fn dec_dep(&self) {
+	fn dec_dep(self) {
 		// Name resolution prioritizes inherent method of the same name.
-		(*self).dec_dep();
+		self.dec_dep();
 	}
 }
 
-impl DropOwned for DebugLifetime {
-	fn drop_owned(self, _cx: ()) {
+impl DestructibleLifetime for DebugLifetime {
+	fn destroy(self) {
 		self.destroy()
 	}
 }
@@ -415,9 +417,46 @@ impl DropOwned for DebugLifetime {
 // === Wrapper Objects === //
 
 #[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Dependent<L: LifetimeLike + Copy>(L);
+pub struct OwnedLifetime<L: DestructibleLifetime>(L);
 
-impl<L: LifetimeLike + Copy> Dependent<L> {
+impl<L: DestructibleLifetime> OwnedLifetime<L> {
+	pub fn new(lifetime: L) -> Self {
+		Self(lifetime)
+	}
+
+	pub fn get(&self) -> L {
+		self.0
+	}
+
+	pub fn defuse(self) -> L {
+		let lt = self.get();
+		std::mem::forget(self);
+		lt
+	}
+}
+
+impl<L: DestructibleLifetime> Borrow<L> for OwnedLifetime<L> {
+	fn borrow(&self) -> &L {
+		&self.0
+	}
+}
+
+impl<L: DestructibleLifetime> From<L> for OwnedLifetime<L> {
+	fn from(value: L) -> Self {
+		Self::new(value)
+	}
+}
+
+impl<L: DestructibleLifetime> Drop for OwnedLifetime<L> {
+	fn drop(&mut self) {
+		self.get().destroy();
+	}
+}
+
+#[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct Dependent<L: LifetimeLike>(L);
+
+impl<L: LifetimeLike> Dependent<L> {
 	pub fn new(lifetime: L) -> Self {
 		lifetime.inc_dep();
 		Self(lifetime)
@@ -434,25 +473,25 @@ impl<L: LifetimeLike + Copy> Dependent<L> {
 	}
 }
 
-impl<L: LifetimeLike + Copy> Borrow<L> for Dependent<L> {
+impl<L: LifetimeLike> Borrow<L> for Dependent<L> {
 	fn borrow(&self) -> &L {
 		&self.0
 	}
 }
 
-impl<L: LifetimeLike + Copy> Clone for Dependent<L> {
+impl<L: LifetimeLike> Clone for Dependent<L> {
 	fn clone(&self) -> Self {
 		Self::new(self.get())
 	}
 }
 
-impl<L: LifetimeLike + Copy> From<L> for Dependent<L> {
+impl<L: LifetimeLike> From<L> for Dependent<L> {
 	fn from(value: L) -> Self {
 		Self::new(value)
 	}
 }
 
-impl<L: LifetimeLike + Copy> Drop for Dependent<L> {
+impl<L: LifetimeLike> Drop for Dependent<L> {
 	fn drop(&mut self) {
 		self.0.dec_dep();
 	}

@@ -9,7 +9,7 @@ use super::ptr::leak_on_heap;
 
 // === InlineStore === //
 
-pub union InlineStore<C> {
+union InlineStore<C> {
 	zst: (),
 	_placeholder: ManuallyDrop<C>,
 }
@@ -40,54 +40,17 @@ impl<C> InlineStore<C> {
 		}
 	}
 
-	pub fn new<T>(value: T) -> Self {
-		Self::try_new(value).ok().unwrap()
-	}
-
-	pub fn as_ptr<T>(&self) -> *const T {
-		assert!(Self::can_hold::<T>());
-
-		(self as *const Self).cast::<T>()
-	}
-
-	pub fn as_ptr_mut<T>(&mut self) -> *mut T {
-		assert!(Self::can_hold::<T>());
-
-		(self as *mut Self).cast::<T>()
-	}
-
 	pub unsafe fn get<T>(&self) -> &T {
 		assert!(Self::can_hold::<T>());
 
 		// Safety: provided by caller
 		self.cast_ref_via_ptr(|ptr| ptr as *const T)
 	}
-
-	pub unsafe fn get_mut<T>(&mut self) -> &mut T {
-		assert!(Self::can_hold::<T>());
-
-		// Safety: provided by caller
-		self.cast_mut_via_ptr(|ptr| ptr as *mut T)
-	}
-
-	pub unsafe fn into_inner<T>(self) -> T {
-		unsafe { self.as_ptr::<T>().read() }
-	}
-
-	pub unsafe fn drop<T>(mut self) {
-		self.drop_in_place::<T>();
-	}
-
-	pub unsafe fn drop_in_place<T>(&mut self) {
-		let ptr = self.get_mut::<T>() as *mut T;
-
-		ptr.drop_in_place();
-	}
 }
 
 // === MaybeBoxed === //
 
-pub union MaybeBoxed<C> {
+union MaybeBoxed<C> {
 	boxed: *mut u8,
 	inlined: ManuallyDrop<InlineStore<C>>,
 }
@@ -115,14 +78,6 @@ impl<C> MaybeBoxed<C> {
 		}
 	}
 
-	pub unsafe fn get_mut<T>(&mut self) -> &mut T {
-		if InlineStore::<C>::can_hold::<T>() {
-			self.inlined.get_mut()
-		} else {
-			&mut *self.boxed.cast::<T>()
-		}
-	}
-
 	pub unsafe fn copy(&self, layout: Layout) -> Self {
 		if InlineStore::<C>::can_hold_layout(layout) {
 			(self as *const Self).read()
@@ -142,29 +97,9 @@ impl<C> MaybeBoxed<C> {
 			alloc::dealloc(self.boxed, layout);
 		}
 	}
-
-	pub unsafe fn into_inner<T>(self) -> T {
-		if InlineStore::<C>::can_hold::<T>() {
-			ManuallyDrop::into_inner(self.inlined).into_inner::<T>()
-		} else {
-			*Box::from_raw(self.boxed.cast::<T>())
-		}
-	}
-
-	pub unsafe fn drop<T>(mut self) {
-		self.drop_in_place::<T>();
-	}
-
-	pub unsafe fn drop_in_place<T>(&mut self) {
-		if InlineStore::<C>::can_hold::<T>() {
-			std::ptr::drop_in_place(self.inlined.get_mut::<T>());
-		} else {
-			drop(Box::from_raw(self.boxed));
-		}
-	}
 }
 
-// === AnyPtr === //
+// === MaybeBoxedCopy === //
 
 pub struct MaybeBoxedCopy<C> {
 	layout: Layout,

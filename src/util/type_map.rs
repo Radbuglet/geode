@@ -25,10 +25,6 @@ impl TypeMap {
 		self.map.add(NamedTypeId::of::<T>(), Box::new(value));
 	}
 
-	pub fn insert<T: 'static + Send + Sync>(&mut self, value: T) {
-		self.map.insert(NamedTypeId::of::<T>(), Box::new(value));
-	}
-
 	pub fn try_get<T: 'static + Send + Sync>(&self) -> Option<&T> {
 		self.map
 			.get(&NamedTypeId::of::<T>())
@@ -42,12 +38,6 @@ impl TypeMap {
 				type_name::<T>()
 			)
 		})
-	}
-
-	pub fn remove<T: 'static + Send + Sync>(&mut self) -> Option<Box<T>> {
-		self.map
-			.remove(&NamedTypeId::of::<T>())
-			.map(|b| Box::<dyn Any + Send + Sync>::downcast(b).unwrap())
 	}
 
 	pub fn flush(&mut self) {

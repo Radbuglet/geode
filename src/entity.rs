@@ -7,9 +7,9 @@ use parking_lot::Mutex;
 use crate::{
 	debug::{
 		label::{DebugLabel, NO_LABEL},
-		lifetime::{DebugLifetime, LifetimeLike},
+		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
 	},
-	util::{drop_guard::DropOwnedGuard, no_hash::RandIdGen, ptr::PointeeCastExt},
+	util::{no_hash::RandIdGen, ptr::PointeeCastExt},
 	Bundle,
 };
 
@@ -22,19 +22,19 @@ pub struct ArchetypeId {
 }
 
 impl LifetimeLike for ArchetypeId {
-	fn is_possibly_alive(&self) -> bool {
+	fn is_possibly_alive(self) -> bool {
 		self.lifetime.is_possibly_alive()
 	}
 
-	fn is_condemned(&self) -> bool {
+	fn is_condemned(self) -> bool {
 		self.lifetime.is_condemned()
 	}
 
-	fn inc_dep(&self) {
+	fn inc_dep(self) {
 		self.lifetime.inc_dep();
 	}
 
-	fn dec_dep(&self) {
+	fn dec_dep(self) {
 		self.lifetime.dec_dep();
 	}
 }
@@ -53,19 +53,19 @@ impl Entity {
 }
 
 impl LifetimeLike for Entity {
-	fn is_possibly_alive(&self) -> bool {
+	fn is_possibly_alive(self) -> bool {
 		self.lifetime.is_possibly_alive()
 	}
 
-	fn is_condemned(&self) -> bool {
+	fn is_condemned(self) -> bool {
 		self.lifetime.is_condemned()
 	}
 
-	fn inc_dep(&self) {
+	fn inc_dep(self) {
 		self.lifetime.inc_dep();
 	}
 
-	fn dec_dep(&self) {
+	fn dec_dep(self) {
 		self.lifetime.dec_dep();
 	}
 }
@@ -79,8 +79,8 @@ static ARCH_ID_FREE_LIST: Mutex<Option<RandIdGen>> = Mutex::new(None);
 pub struct Archetype<M: ?Sized = ()> {
 	_ty: PhantomData<fn(M) -> M>,
 	id: NonZeroU32,
-	lifetime: DropOwnedGuard<DebugLifetime>,
-	slots: Vec<DropOwnedGuard<DebugLifetime>>,
+	lifetime: OwnedLifetime<DebugLifetime>,
+	slots: Vec<OwnedLifetime<DebugLifetime>>,
 	free_slots: BitSet,
 }
 
@@ -96,7 +96,7 @@ impl<M: ?Sized> Archetype<M> {
 		Self {
 			_ty: PhantomData,
 			id,
-			lifetime: DropOwnedGuard::new(DebugLifetime::new(name)),
+			lifetime: OwnedLifetime::new(DebugLifetime::new(name)),
 			slots: Vec::new(),
 			free_slots: BitSet::new(),
 		}
@@ -113,7 +113,7 @@ impl<M: ?Sized> Archetype<M> {
 				let slot = self.slots.len() as u32;
 				assert_ne!(slot, u32::MAX, "spawned too many entities");
 
-				self.slots.push(DropOwnedGuard::new(lifetime));
+				self.slots.push(OwnedLifetime::new(lifetime));
 				slot
 			}
 		};
@@ -169,7 +169,7 @@ impl<M: ?Sized> Archetype<M> {
 
 	pub fn id(&self) -> ArchetypeId {
 		ArchetypeId {
-			lifetime: *self.lifetime,
+			lifetime: self.lifetime.get(),
 			id: self.id,
 		}
 	}

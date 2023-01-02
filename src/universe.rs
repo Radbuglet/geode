@@ -22,12 +22,11 @@ use crate::{
 	context::UnpackTarget,
 	debug::{
 		label::{DebugLabel, ReifiedDebugLabel},
-		lifetime::{DebugLifetime, LifetimeLike},
+		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
 	},
 	event::TaskQueue,
 	util::{
-		drop_guard::DropOwnedGuard, eventual_map::EventualMap, no_hash::NoOpBuildHasher,
-		ptr::PointeeCastExt, type_map::TypeMap,
+		eventual_map::EventualMap, no_hash::NoOpBuildHasher, ptr::PointeeCastExt, type_map::TypeMap,
 	},
 	Archetype, ArchetypeId, EventQueue, EventQueueIter, Provider, Storage,
 };
@@ -54,7 +53,7 @@ struct ArchetypeInner {
 
 #[derive(Debug)]
 struct TagInner {
-	_lifetime: DropOwnedGuard<DebugLifetime>,
+	_lifetime: OwnedLifetime<DebugLifetime>,
 	tagged: Mutex<HashSet<ArchetypeId>>,
 }
 
@@ -142,7 +141,7 @@ impl Universe {
 		self.tags.add(
 			id,
 			Box::new(TagInner {
-				_lifetime: DropOwnedGuard::new(lifetime),
+				_lifetime: OwnedLifetime::new(lifetime),
 				tagged: Default::default(),
 			}),
 		);
@@ -354,19 +353,19 @@ pub struct TagId {
 }
 
 impl LifetimeLike for TagId {
-	fn is_possibly_alive(&self) -> bool {
+	fn is_possibly_alive(self) -> bool {
 		self.lifetime.is_possibly_alive()
 	}
 
-	fn is_condemned(&self) -> bool {
+	fn is_condemned(self) -> bool {
 		self.lifetime.is_condemned()
 	}
 
-	fn inc_dep(&self) {
+	fn inc_dep(self) {
 		self.lifetime.inc_dep()
 	}
 
-	fn dec_dep(&self) {
+	fn dec_dep(self) {
 		self.lifetime.dec_dep()
 	}
 }

@@ -1,4 +1,3 @@
-pub mod drop_guard;
 pub mod eventual_map;
 pub mod inline;
 pub mod macros;
