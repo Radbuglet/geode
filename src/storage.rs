@@ -2,12 +2,12 @@ use std::{any::type_name, collections::HashMap, fmt::Debug, num::NonZeroU32, ops
 
 use derive_where::derive_where;
 
-use crate::{debug::lifetime::{DebugLifetime, Dependent, LifetimeLike}, mem::no_hash::NoOpBuildHasher};
-
-use super::{
-	entity::{ArchetypeId, Entity},
-	query::{Query, QueryIter, StorageIterMut, StorageIterRef},
+use crate::{
+	debug::lifetime::{DebugLifetime, Dependent, LifetimeLike},
+	query::{QueryIter, StorageIterMut, StorageIterRef},
 	universe::{BuildableResourceRw, Universe},
+	util::no_hash::NoOpBuildHasher,
+	ArchetypeId, Entity, Query,
 };
 
 fn failed_to_find_component<T>(entity: Entity) -> ! {

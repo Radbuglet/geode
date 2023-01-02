@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, cmp::Ordering, fmt, hash, num::NonZeroU64};
 
-use crate::mem::drop_guard::DropOwned;
+use crate::util::drop_guard::DropOwned;
 
 use super::label::{DebugLabel, ReifiedDebugLabel};
 
@@ -26,7 +26,7 @@ mod db {
 
 	use super::{LifetimeSlot, SlotData, SlotDataInner};
 
-	use crate::mem::pool::{GlobalPool, LocalPool};
+	use crate::util::pool::{GlobalPool, LocalPool};
 
 	const POOL_BLOCK_SIZE: usize = 1024;
 

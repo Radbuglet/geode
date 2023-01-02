@@ -9,10 +9,9 @@ use crate::{
 		label::{DebugLabel, NO_LABEL},
 		lifetime::{DebugLifetime, LifetimeLike},
 	},
-	mem::{drop_guard::DropOwnedGuard, no_hash::RandIdGen, ptr::PointeeCastExt},
+	util::{drop_guard::DropOwnedGuard, no_hash::RandIdGen, ptr::PointeeCastExt},
+	Bundle,
 };
-
-use super::bundle::Bundle;
 
 // === Handles === //
 

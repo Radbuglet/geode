@@ -4,10 +4,9 @@ use derive_where::derive_where;
 
 use crate::{
 	debug::lifetime::{DebugLifetime, Dependent},
-	mem::no_hash::NoOpBuildHasher,
+	util::no_hash::NoOpBuildHasher,
+	ArchetypeId, Entity,
 };
-
-use super::entity::{ArchetypeId, Entity};
 
 // === Aliases === //
 

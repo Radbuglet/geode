@@ -20,7 +20,7 @@ macro_rules! impl_tuples {
 			$($($($pre)*,)*)?
 			$($next)*
 		);
-		$crate::lang::macros::impl_tuples!(
+		$crate::util::macros::impl_tuples!(
 			$target : [
 				$($rest)*
 			] | [
@@ -32,7 +32,7 @@ macro_rules! impl_tuples {
 
 	// === impl_tuples === //
 	($target:path; no_unit) => {
-		$crate::lang::macros::impl_tuples!(
+		$crate::util::macros::impl_tuples!(
 			$target : [
 				{A: 0}
 				{B: 1}
@@ -52,7 +52,7 @@ macro_rules! impl_tuples {
 	};
 	($target:path) => {
 		$target!();
-		$crate::lang::macros::impl_tuples!($target; no_unit);
+		$crate::util::macros::impl_tuples!($target; no_unit);
 	};
 }
 

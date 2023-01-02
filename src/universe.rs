@@ -19,21 +19,17 @@ use fnv::FnvBuildHasher;
 use parking_lot::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::{
+	context::UnpackTarget,
 	debug::{
 		label::{DebugLabel, ReifiedDebugLabel},
 		lifetime::{DebugLifetime, LifetimeLike},
 	},
-	mem::{
+	event::TaskQueue,
+	util::{
 		drop_guard::DropOwnedGuard, eventual_map::EventualMap, no_hash::NoOpBuildHasher,
 		ptr::PointeeCastExt, type_map::TypeMap,
 	},
-};
-
-use super::{
-	context::{Provider, UnpackTarget},
-	entity::{Archetype, ArchetypeId},
-	event::{EventQueue, EventQueueIter, TaskQueue},
-	storage::Storage,
+	Archetype, ArchetypeId, EventQueue, EventQueueIter, Provider, Storage,
 };
 
 // === Universe === //
@@ -51,7 +47,7 @@ pub struct Universe {
 
 #[derive(Debug)]
 struct ArchetypeInner {
-	archetype: Mutex<Archetype<()>>,
+	archetype: Mutex<Archetype>,
 	meta: TypeMap,
 	tags: Mutex<HashSet<TagId>>,
 }

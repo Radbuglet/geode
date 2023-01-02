@@ -1,9 +1,6 @@
-use crate::lang::macros::impl_tuples;
+use crate::util::macros::impl_tuples;
 
-use super::{
-	entity::{ArchetypeId, Entity},
-	storage::{Storage, StorageRunSlot},
-};
+use super::{storage::StorageRunSlot, ArchetypeId, Entity, Storage};
 
 use std::{iter, slice};
 

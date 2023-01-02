@@ -1,4 +1,4 @@
-use super::entity::Entity;
+use crate::Entity;
 
 #[doc(hidden)]
 pub mod macro_internal {
@@ -32,24 +32,24 @@ macro_rules! bundle {
 			),*
 		}
 
-		impl $crate::ecs::bundle::Bundle for $name {
-			type Context<'a> = ($(&'a mut $crate::ecs::storage::Storage<$ty>,)*);
+		impl $crate::Bundle for $name {
+			type Context<'a> = ($(&'a mut $crate::Storage<$ty>,)*);
 
 			#[allow(unused)]
-			fn attach(self, mut cx: Self::Context<'_>, target: $crate::ecs::entity::Entity) {
+			fn attach(self, mut cx: Self::Context<'_>, target: $crate::Entity) {
 				$(
-					$crate::ecs::context::decompose!(cx => {
-						storage: &mut $crate::ecs::storage::Storage<$ty>
+					$crate::decompose!(cx => {
+						storage: &mut $crate::Storage<$ty>
 					});
 					storage.add(target, self.$field);
 				)*
 			}
 
 			#[allow(unused)]
-			fn detach(mut cx: Self::Context<'_>, target: $crate::ecs::entity::Entity) -> Self {
+			fn detach(mut cx: Self::Context<'_>, target: $crate::Entity) -> Self {
 				$(
-					$crate::ecs::context::decompose!(cx => {
-						storage: &mut $crate::ecs::storage::Storage<$ty>
+					$crate::decompose!(cx => {
+						storage: &mut $crate::Storage<$ty>
 					});
 					let $field = storage.try_remove(target).unwrap();
 				)*

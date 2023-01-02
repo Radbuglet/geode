@@ -2,9 +2,7 @@ use std::any::{type_name, Any};
 
 use fnv::FnvBuildHasher;
 
-use crate::debug::type_id::NamedTypeId;
-
-use super::eventual_map::EventualMap;
+use super::{eventual_map::EventualMap, type_id::NamedTypeId};
 
 #[derive(Debug, Default)]
 pub struct TypeMap {
@@ -12,10 +10,6 @@ pub struct TypeMap {
 }
 
 impl TypeMap {
-	pub fn new() -> Self {
-		Self::default()
-	}
-
 	pub fn get_or_create<T, F>(&self, f: F) -> &T
 	where
 		T: 'static + Send + Sync,

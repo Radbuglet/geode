@@ -2,7 +2,7 @@ use std::mem;
 
 use parking_lot::Mutex;
 
-use crate::mem::ptr::addr_of_ptr;
+use crate::util::ptr::addr_of_ptr;
 
 #[derive(Debug)]
 pub struct GlobalPool<T: 'static> {

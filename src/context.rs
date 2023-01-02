@@ -7,7 +7,12 @@ use std::{
 	mem,
 };
 
-use crate::{debug::type_id::NamedTypeId, lang::macros::impl_tuples, mem::inline::MaybeBoxedCopy};
+use fnv::FnvBuildHasher;
+
+use crate::{
+	util::{inline::MaybeBoxedCopy, macros::impl_tuples, type_id::NamedTypeId},
+	Universe,
+};
 
 // === Core === //
 
@@ -278,40 +283,42 @@ pub mod macro_internal {
 	#[macro_export]
 	macro_rules! unpack_internal_ty_acquire_guard {
 		($src:expr, @arch $ty:ty) => {
-			<$crate::ecs::universe::ResArch<$ty> as $crate::ecs::context::UnpackTarget<_>>::acquire_guard($src)
+			<$crate::universe::ResArch<$ty> as $crate::context::UnpackTarget<_>>::acquire_guard(
+				$src,
+			)
 		};
 		($src:expr, @res $ty:ty) => {
-			<$crate::ecs::universe::Res<&$ty> as $crate::ecs::context::UnpackTarget<_>>::acquire_guard($src)
+			<$crate::universe::Res<&$ty> as $crate::context::UnpackTarget<_>>::acquire_guard($src)
 		};
 		($src:expr, @mut $ty:ty) => {
-			<$crate::ecs::universe::ResRw<&mut $ty> as $crate::ecs::context::UnpackTarget<_>>::acquire_guard($src)
+			<$crate::universe::ResRw<&mut $ty> as $crate::context::UnpackTarget<_>>::acquire_guard(
+				$src,
+			)
 		};
 		($src:expr, @ref $ty:ty) => {
-			<$crate::ecs::universe::ResRw<&$ty> as $crate::ecs::context::UnpackTarget<_>>::acquire_guard($src)
+			<$crate::universe::ResRw<&$ty> as $crate::context::UnpackTarget<_>>::acquire_guard($src)
 		};
 		($src:expr, $ty:ty) => {
-			<$ty as $crate::ecs::context::UnpackTarget<_>>::acquire_guard($src)
+			<$ty as $crate::context::UnpackTarget<_>>::acquire_guard($src)
 		};
 	}
 
 	#[macro_export]
 	macro_rules! unpack_internal_ty_phantom_data {
 		(@arch $ty:ty) => {
-			$crate::ecs::context::macro_internal::PhantomData::<$crate::ecs::universe::ResArch<$ty>>
+			$crate::context::macro_internal::PhantomData::<$crate::universe::ResArch<$ty>>
 		};
 		(@res $ty:ty) => {
-			$crate::ecs::context::macro_internal::PhantomData::<$crate::ecs::universe::Res<&$ty>>
+			$crate::context::macro_internal::PhantomData::<$crate::universe::Res<&$ty>>
 		};
 		(@mut $ty:ty) => {
-			$crate::ecs::context::macro_internal::PhantomData::<
-				$crate::ecs::universe::ResRw<&mut $ty>,
-			>
+			$crate::context::macro_internal::PhantomData::<$crate::universe::ResRw<&mut $ty>>
 		};
 		(@ref $ty:ty) => {
-			$crate::ecs::context::macro_internal::PhantomData::<$crate::ecs::universe::ResRw<&$ty>>
+			$crate::context::macro_internal::PhantomData::<$crate::universe::ResRw<&$ty>>
 		};
 		($ty:ty) => {
-			$crate::ecs::context::macro_internal::PhantomData::<$ty>
+			$crate::context::macro_internal::PhantomData::<$ty>
 		};
 	}
 
@@ -357,7 +364,7 @@ macro_rules! unpack {
 		$guard = ($( $crate::unpack_internal_ty_acquire_guard!(src, $(@$anno)? $ty) ,)*);
 
 		// Acquire references
-		$crate::ecs::context::macro_internal::UnpackTargetTuple::acquire_refs(
+		$crate::context::macro_internal::UnpackTargetTuple::acquire_refs(
 			($($crate::unpack_internal_ty_phantom_data!($(@$anno)? $ty),)*),
 			src,
 			&mut $guard,
@@ -383,7 +390,7 @@ macro_rules! unpack {
 		$(,)?
 	}) => {
 		let mut guard;
-		let ($($name,)*) = $crate::ecs::context::unpack!($src => guard & (
+		let ($($name,)*) = $crate::unpack!($src => guard & (
 			$($(@$anno)? $ty),*
 		));
 	};
@@ -395,7 +402,7 @@ macro_rules! unpack {
 		),*
 		$(,)?
 	}) => {
-		let ($($name,)*) = $crate::ecs::context::unpack!($src => (
+		let ($($name,)*) = $crate::unpack!($src => (
 			$($(@$anno)? $ty),*
 		));
 	};
@@ -404,17 +411,17 @@ macro_rules! unpack {
 #[macro_export]
 macro_rules! provider_from_tuple {
 	($parent:expr, $expr:expr) => {
-		$crate::ecs::context::Provider::new_with_parent_and_comps(
+		$crate::Provider::new_with_parent_and_comps(
 			$parent,
-			$crate::ecs::context::macro_internal::ProviderFromDecomposedTuple(
-				$crate::ecs::context::decompose!($expr => (&mut ...))
+			$crate::context::macro_internal::ProviderFromDecomposedTuple(
+				$crate::decompose!($expr => (&mut ...))
 			)
 		)
 	};
 	($expr:expr) => {
-		$crate::ecs::context::Provider::new_with(
+		$crate::Provider::new_with(
 			$crate::ecs::context::macro_internal::ProviderFromDecomposedTuple(
-				$crate::ecs::context::decompose!($expr => (&mut ...))
+				$crate::decompose!($expr => (&mut ...))
 			)
 		)
 	};
@@ -425,7 +432,4 @@ pub use {provider_from_tuple, unpack};
 // === Tuple context passing === //
 
 pub use compost::decompose;
-use fnv::FnvBuildHasher;
 pub use tuples::{CombinConcat, CombinRight};
-
-use super::universe::Universe;

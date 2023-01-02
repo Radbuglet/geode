@@ -3,7 +3,7 @@ use std::{
 	mem::{self, ManuallyDrop},
 };
 
-use crate::mem::ptr::PointeeCastExt;
+use crate::util::ptr::PointeeCastExt;
 
 use super::ptr::leak_on_heap;
 
