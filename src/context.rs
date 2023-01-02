@@ -38,7 +38,7 @@ impl<'r> Provider<'r> {
 			_ty: PhantomData,
 			universe,
 			parent: None,
-			values: Default::default(),
+			values: HashMap::default(),
 		}
 	}
 
@@ -51,7 +51,7 @@ impl<'r> Provider<'r> {
 			_ty: PhantomData,
 			universe: parent.universe,
 			parent: Some(parent),
-			values: Default::default(),
+			values: HashMap::default(),
 		}
 	}
 
@@ -167,21 +167,21 @@ pub trait ProviderEntries<'a> {
 
 impl<'a: 'b, 'b, T: ?Sized + 'static> ProviderEntries<'b> for &'a T {
 	fn add_to_provider(self, provider: &mut Provider<'b>) {
-		provider.add_ref(self)
+		provider.add_ref(self);
 	}
 
 	fn add_to_provider_ref(&'b mut self, provider: &mut Provider<'b>) {
-		provider.add_ref(*self)
+		provider.add_ref(*self);
 	}
 }
 
 impl<'a: 'b, 'b, T: ?Sized + 'static> ProviderEntries<'b> for &'a mut T {
 	fn add_to_provider(self, provider: &mut Provider<'b>) {
-		provider.add_mut(self)
+		provider.add_mut(self);
 	}
 
 	fn add_to_provider_ref(&'b mut self, provider: &mut Provider<'b>) {
-		provider.add_mut(*self)
+		provider.add_mut(*self);
 	}
 }
 

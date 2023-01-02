@@ -14,7 +14,7 @@ pub struct NoOpHasher(u64);
 impl hash::Hasher for NoOpHasher {
 	fn write_u32(&mut self, i: u32) {
 		debug_assert_eq!(self.0, 0);
-		let i = i as u64;
+		let i = u64::from(i);
 		self.0 = (i << 32) + i;
 	}
 

@@ -291,7 +291,7 @@ mod release_impl {
 		pub const IS_ENABLED: bool = false;
 
 		pub fn new<L: DebugLabel>(name: L) -> Self {
-			let _name = name;
+			let _ = name;
 
 			Self { _private: () }
 		}
@@ -382,7 +382,7 @@ impl LifetimeLike for Lifetime {
 
 impl DestructibleLifetime for Lifetime {
 	fn destroy(self) {
-		self.destroy()
+		self.destroy();
 	}
 }
 
@@ -410,7 +410,7 @@ impl LifetimeLike for DebugLifetime {
 
 impl DestructibleLifetime for DebugLifetime {
 	fn destroy(self) {
-		self.destroy()
+		self.destroy();
 	}
 }
 

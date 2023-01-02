@@ -50,20 +50,15 @@ impl<T> Storage<T> {
 	}
 
 	pub fn get_run_slice(&self, archetype: ArchetypeId) -> &[Option<StorageRunSlot<T>>] {
-		match self.get_run(archetype) {
-			Some(run) => run.as_slice(),
-			None => &[],
-		}
+		self.get_run(archetype).map_or(&[], StorageRun::as_slice)
 	}
 
 	pub fn get_run_slice_mut(
 		&mut self,
 		archetype: ArchetypeId,
 	) -> &mut [Option<StorageRunSlot<T>>] {
-		match self.get_run_mut(archetype) {
-			Some(run) => run.as_mut_slice(),
-			None => &mut [],
-		}
+		self.get_run_mut(archetype)
+			.map_or(&mut [], StorageRun::as_mut_slice)
 	}
 
 	pub fn get_or_create_run(&mut self, archetype: ArchetypeId) -> &mut StorageRun<T> {
@@ -251,10 +246,7 @@ impl<T> StorageRun<T> {
 	}
 
 	pub fn get(&self, slot_idx: u32) -> Option<&StorageRunSlot<T>> {
-		let slot = self
-			.comps
-			.get(slot_idx as usize)
-			.and_then(|opt| opt.as_ref());
+		let slot = self.comps.get(slot_idx as usize).and_then(Option::as_ref);
 
 		if let Some(slot) = slot.filter(|slot| slot.lifetime.get().is_condemned()) {
 			log::error!(
@@ -273,7 +265,7 @@ impl<T> StorageRun<T> {
 		let slot = self
 			.comps
 			.get_mut(slot_idx as usize)
-			.and_then(|opt| opt.as_mut());
+			.and_then(Option::as_mut);
 
 		if let Some(slot) = slot
 			.as_ref()
@@ -326,6 +318,6 @@ impl<T> StorageRunSlot<T> {
 
 impl<T: 'static + Send + Sync> BuildableResourceRw for Storage<T> {
 	fn create(_universe: &Universe) -> Self {
-		Default::default()
+		Storage::default()
 	}
 }

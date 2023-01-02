@@ -22,10 +22,9 @@ impl DebugLabel for &'static str {
 
 impl DebugLabel for fmt::Arguments<'_> {
 	fn reify(self) -> ReifiedDebugLabel {
-		if let Some(static_str) = self.as_str() {
-			Some(Cow::Borrowed(static_str))
-		} else {
-			Some(Cow::Owned(format!("{self}")))
+		match self.as_str() {
+			Some(static_str) => Some(Cow::Borrowed(static_str)),
+			None => Some(Cow::Owned(format!("{self}"))),
 		}
 	}
 }

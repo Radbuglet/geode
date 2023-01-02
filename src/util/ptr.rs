@@ -68,7 +68,7 @@ impl<P: ?Sized> PointeeCastExt for P {
 	type Pointee = P;
 
 	fn as_byte_ptr(&self) -> *const u8 {
-		self as *const Self as *const u8
+		(self as *const Self).cast::<u8>()
 	}
 
 	unsafe fn prolong<'r>(&self) -> &'r Self::Pointee {

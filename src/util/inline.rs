@@ -1,6 +1,7 @@
 use std::{
 	alloc::{self, Layout},
 	mem::{self, ManuallyDrop},
+	ptr,
 };
 
 use crate::util::ptr::PointeeCastExt;
@@ -31,7 +32,7 @@ impl<C> InlineStore<C> {
 			let mut target = Self { zst: () };
 
 			unsafe {
-				(&mut target as *mut Self).cast::<T>().write(value);
+				ptr::addr_of_mut!(target).cast::<T>().write(value);
 			}
 
 			Ok(target)
@@ -44,7 +45,7 @@ impl<C> InlineStore<C> {
 		assert!(Self::can_hold::<T>());
 
 		// Safety: provided by caller
-		self.cast_ref_via_ptr(|ptr| ptr as *const T)
+		self.cast_ref_via_ptr(|ptr| ptr.cast::<T>())
 	}
 }
 

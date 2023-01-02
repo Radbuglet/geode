@@ -87,8 +87,8 @@ impl Universe {
 			id,
 			Box::new(ArchetypeInner {
 				archetype: Mutex::new(archetype),
-				meta: Default::default(),
-				tags: Default::default(),
+				meta: TypeMap::default(),
+				tags: Mutex::default(),
 			}),
 		);
 
@@ -112,11 +112,11 @@ impl Universe {
 	where
 		E: 'static,
 		F: 'static + Send + Sync,
-		F: Fn(&Universe, EventQueueIter<E>),
+		F: Fn(&Self, EventQueueIter<E>),
 	{
-		self.add_archetype_meta::<UniverseEventQueueHandler<E>>(
+		self.add_archetype_meta::<ArchetypeEventQueueHandler<E>>(
 			id,
-			UniverseEventQueueHandler(Box::new(handler)),
+			ArchetypeEventQueueHandler(Box::new(handler)),
 		);
 	}
 
@@ -139,7 +139,7 @@ impl Universe {
 			id,
 			Box::new(TagInner {
 				_lifetime: OwnedLifetime::new(lifetime),
-				tagged: Default::default(),
+				tagged: Mutex::default(),
 			}),
 		);
 
@@ -172,7 +172,7 @@ impl Universe {
 	}
 
 	pub fn archetype<T: ?Sized + BuildableArchetypeBundle>(&self) -> &Mutex<Archetype<()>> {
-		let id = self.resource::<UniverseArchetypeResource<T>>().id();
+		let id = self.resource::<ArchetypeHandleResource<T>>().id();
 		self.archetype_by_id(id)
 	}
 
@@ -188,7 +188,7 @@ impl Universe {
 
 	pub fn queue_task<F>(&self, name: impl DebugLabel, handler: F)
 	where
-		F: 'static + Send + Sync + FnOnce(&mut Universe),
+		F: 'static + Send + Sync + FnOnce(&mut Self),
 	{
 		let mut handler = Some(handler);
 
@@ -204,7 +204,7 @@ impl Universe {
 			move |universe| {
 				for iter in events.flush_all() {
 					let arch = iter.arch();
-					let handler = universe.archetype_meta::<UniverseEventQueueHandler<E>>(arch);
+					let handler = universe.archetype_meta::<ArchetypeEventQueueHandler<E>>(arch);
 					handler.0(universe, iter);
 				}
 			},
@@ -359,21 +359,21 @@ impl LifetimeLike for TagId {
 	}
 
 	fn inc_dep(self) {
-		self.lifetime.inc_dep()
+		self.lifetime.inc_dep();
 	}
 
 	fn dec_dep(self) {
-		self.lifetime.dec_dep()
+		self.lifetime.dec_dep();
 	}
 }
 
 // === Universe helpers === //
 
-pub struct UniverseEventQueueHandler<E>(
+pub struct ArchetypeEventQueueHandler<E>(
 	pub Box<dyn Fn(&Universe, EventQueueIter<E>) + 'static + Send + Sync>,
 );
 
-impl<E> fmt::Debug for UniverseEventQueueHandler<E> {
+impl<E> fmt::Debug for ArchetypeEventQueueHandler<E> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		f.debug_struct(format!("UniverseEventQueueHandler<{}>", type_name::<E>()).as_str())
 			.finish_non_exhaustive()
@@ -381,15 +381,15 @@ impl<E> fmt::Debug for UniverseEventQueueHandler<E> {
 }
 
 #[derive_where(Debug)]
-pub struct UniverseArchetypeResource<T: ?Sized>(pub ArchetypeHandle<T>);
+pub struct ArchetypeHandleResource<T: ?Sized>(pub ArchetypeHandle<T>);
 
-impl<T: ?Sized + BuildableArchetypeBundle> BuildableResource for UniverseArchetypeResource<T> {
+impl<T: ?Sized + BuildableArchetypeBundle> BuildableResource for ArchetypeHandleResource<T> {
 	fn create(universe: &Universe) -> Self {
 		Self(T::create_archetype(universe))
 	}
 }
 
-impl<T: ?Sized> UniverseArchetypeResource<T> {
+impl<T: ?Sized> ArchetypeHandleResource<T> {
 	pub fn id(&self) -> ArchetypeId {
 		self.0.id()
 	}
@@ -417,7 +417,7 @@ pub trait BuildableArchetypeBundle: 'static {
 	}
 }
 
-// === Resource dependency injection in `Provider` === //
+// === `Provider` dependency injection === //
 
 pub mod injection {
 	use std::{
@@ -431,6 +431,8 @@ pub mod injection {
 	use crate::{context::UnpackTarget, Provider};
 
 	use super::*;
+
+	// === Markers === //
 
 	pub struct Res<T>(PhantomData<fn(T) -> T>);
 
@@ -586,6 +588,8 @@ pub mod injection {
 			guard.cast_marker_mut()
 		}
 	}
+
+	// === Guards === //
 
 	#[derive(Debug)]
 	pub enum ProviderResourceGuard<'a, T: 'static> {

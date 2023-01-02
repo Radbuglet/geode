@@ -158,7 +158,7 @@ where
 			mem::take(self.nursery.get_mut())
 				.into_iter()
 				.map(|(k, v)| (k, v.value.unwrap())),
-		)
+		);
 	}
 }
 

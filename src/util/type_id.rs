@@ -11,7 +11,7 @@ impl fmt::Debug for NamedTypeId {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		#[cfg(debug_assertions)]
 		if let Some(name) = self.name {
-			return write!(f, "TypeId<{}>", name);
+			return write!(f, "TypeId<{name}>");
 		}
 
 		self.id.fmt(f)
