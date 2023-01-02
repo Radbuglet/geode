@@ -1,0 +1,14 @@
+[package]
+name = "geode"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytemuck = { version = "1.12.3", features = ["derive"] }
+compost = "0.3.0"
+derive-where = "1.0.0"
+fastrand = "1.8.0"
+hashbrown = "0.13.1"
+log = "0.4.17"
+parking_lot = "0.12.1"
+tuples = { version = "1.6.0", features = ["combin"] }
