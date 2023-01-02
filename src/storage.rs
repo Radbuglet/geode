@@ -4,9 +4,9 @@ use derive_where::derive_where;
 
 use crate::{
 	debug::lifetime::{DebugLifetime, Dependent, LifetimeLike},
+	entity::hashers::ArchetypeBuildHasher,
 	query::{QueryIter, StorageIterMut, StorageIterRef},
 	universe::{BuildableResourceRw, Universe},
-	util::no_hash::NoOpBuildHasher,
 	ArchetypeId, Entity, Query,
 };
 
@@ -21,7 +21,7 @@ fn failed_to_find_component<T>(entity: Entity) -> ! {
 #[derive_where(Default)]
 #[repr(transparent)]
 pub struct Storage<T> {
-	archetypes: HashMap<NonZeroU32, StorageRun<T>, NoOpBuildHasher>,
+	archetypes: HashMap<NonZeroU32, StorageRun<T>, ArchetypeBuildHasher>,
 }
 
 impl<T> Storage<T> {

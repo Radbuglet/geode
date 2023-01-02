@@ -1,6 +1,11 @@
 use derive_where::derive_where;
 use hibitset::BitSet;
-use std::{marker::PhantomData, mem::transmute, num::NonZeroU32};
+use std::{
+	collections::{HashMap, HashSet},
+	marker::PhantomData,
+	mem::transmute,
+	num::NonZeroU32,
+};
 
 use parking_lot::Mutex;
 
@@ -10,7 +15,7 @@ use crate::{
 		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
 	},
 	util::{no_hash::RandIdGen, ptr::PointeeCastExt},
-	Bundle,
+	Bundle, Dependent,
 };
 
 // === Handles === //
@@ -69,6 +74,18 @@ impl LifetimeLike for Entity {
 		self.lifetime.dec_dep();
 	}
 }
+
+// === Maps === //
+
+pub mod hashers {
+	pub use crate::util::no_hash::NoOpBuildHasher as ArchetypeBuildHasher;
+	pub use fnv::FnvBuildHasher as EntityBuildHasher;
+}
+
+pub type ArchetypeMap<V> = HashMap<Dependent<ArchetypeId>, V, hashers::ArchetypeBuildHasher>;
+pub type ArchetypeSet = HashSet<Dependent<ArchetypeId>, hashers::ArchetypeBuildHasher>;
+pub type EntityMap<V> = HashMap<Dependent<ArchetypeId>, V, hashers::EntityBuildHasher>;
+pub type EntitySet = HashSet<Dependent<ArchetypeId>, hashers::EntityBuildHasher>;
 
 // === Archetype === //
 

@@ -21,10 +21,9 @@ use crate::{
 		label::{DebugLabel, ReifiedDebugLabel},
 		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
 	},
+	entity::hashers::ArchetypeBuildHasher,
 	event::TaskQueue,
-	util::{
-		eventual_map::EventualMap, no_hash::NoOpBuildHasher, ptr::PointeeCastExt, type_map::TypeMap,
-	},
+	util::{eventual_map::EventualMap, ptr::PointeeCastExt, type_map::TypeMap},
 	Archetype, ArchetypeId, EventHandler, EventQueue, EventQueueIter, Storage,
 };
 
@@ -32,7 +31,7 @@ use crate::{
 
 #[derive(Debug, Default)]
 pub struct Universe {
-	archetypes: EventualMap<ArchetypeId, ArchetypeInner, NoOpBuildHasher>,
+	archetypes: EventualMap<ArchetypeId, ArchetypeInner, ArchetypeBuildHasher>,
 	tags: EventualMap<TagId, TagInner, FnvBuildHasher>,
 	tag_alloc: AtomicU64,
 	dirty_archetypes: Mutex<HashSet<ArchetypeId>>,
@@ -105,7 +104,7 @@ impl Universe {
 
 	pub fn archetype_by_handle<M: ?Sized>(
 		&self,
-		handle: ArchetypeHandle<M>,
+		handle: &ArchetypeHandle<M>,
 	) -> MappedMutexGuard<Archetype<M>> {
 		MutexGuard::map(
 			self.archetype_by_id(handle.id()).try_lock().unwrap(),
@@ -115,7 +114,7 @@ impl Universe {
 
 	pub fn archetype_by_handle_blocking<M: ?Sized>(
 		&self,
-		handle: ArchetypeHandle<M>,
+		handle: &ArchetypeHandle<M>,
 	) -> MappedMutexGuard<Archetype<M>> {
 		MutexGuard::map(self.archetype_by_id(handle.id()).lock(), |arch| {
 			arch.cast_marker_mut()

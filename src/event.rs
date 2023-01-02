@@ -7,7 +7,8 @@ use crate::{
 		label::DebugLabel,
 		lifetime::{DebugLifetime, Dependent},
 	},
-	util::{no_hash::NoOpBuildHasher, type_id::NamedTypeId},
+	entity::hashers::ArchetypeBuildHasher,
+	util::type_id::NamedTypeId,
 	ArchetypeId, Entity, Provider, Universe,
 };
 
@@ -23,7 +24,7 @@ pub type DestroyQueue = EventQueue<EntityDestroyEvent>;
 #[derive(Debug, Clone)]
 #[derive_where(Default)]
 pub struct EventQueue<E> {
-	runs: HashMap<NonZeroU32, (Dependent<DebugLifetime>, Vec<Event<E>>), NoOpBuildHasher>,
+	runs: HashMap<NonZeroU32, (Dependent<DebugLifetime>, Vec<Event<E>>), ArchetypeBuildHasher>,
 	maybe_recursively_dispatched: bool,
 }
 
