@@ -1,11 +1,14 @@
-use std::{any::type_name, collections::HashMap, mem, num::NonZeroU32, vec};
+use std::{any::type_name, collections::HashMap, fmt, mem, num::NonZeroU32, vec};
 
 use derive_where::derive_where;
 
 use crate::{
-	debug::lifetime::{DebugLifetime, Dependent},
-	util::no_hash::NoOpBuildHasher,
-	ArchetypeId, Entity,
+	debug::{
+		label::DebugLabel,
+		lifetime::{DebugLifetime, Dependent},
+	},
+	util::{no_hash::NoOpBuildHasher, type_id::NamedTypeId},
+	ArchetypeId, Entity, Provider, Universe,
 };
 
 // === Aliases === //
@@ -195,5 +198,103 @@ impl<T> Drop for TaskQueue<T> {
 				if remaining == 1 { "" } else { "s" },
 			);
 		}
+	}
+}
+
+// === EventHandler === //
+
+pub struct EventHandler<E>(Box<dyn EventHandlerTrait<E>>);
+
+impl<E: 'static> fmt::Debug for EventHandler<E> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		f.debug_struct(format!("EventHandler<{}>", type_name::<E>()).as_str())
+			.field("handler_ty", &self.0.type_id())
+			.finish_non_exhaustive()
+	}
+}
+
+impl<E: 'static> Clone for EventHandler<E> {
+	fn clone(&self) -> Self {
+		Self(self.0.cloned())
+	}
+}
+
+impl<E: 'static> EventHandler<E> {
+	pub fn new<F>(f: F) -> Self
+	where
+		F: 'static + Fn(&Provider, E) + Send + Sync + Clone,
+	{
+		Self(Box::new(f))
+	}
+
+	pub fn new_universe<F>(f: F) -> Self
+	where
+		F: 'static + Fn(&Universe, E) + Send + Sync + Clone,
+	{
+		Self(Box::new(EventHandlerUniverseAdapter(f)))
+	}
+
+	pub fn process(&self, cx: &Provider, event: E) {
+		self.0.process(cx, event);
+	}
+
+	pub fn process_universe(&self, cx: &Universe, event: E) {
+		self.process(&Provider::new(cx), event)
+	}
+
+	pub fn queue_process<L>(&self, universe: &Universe, name: L, event: E)
+	where
+		L: DebugLabel,
+		E: Send + Sync,
+	{
+		let handler = self.clone();
+		universe.queue_task(name, move |universe| {
+			handler.process_universe(&universe, event);
+		});
+	}
+}
+
+trait EventHandlerTrait<E>: 'static + Send + Sync {
+	fn cloned(&self) -> Box<dyn EventHandlerTrait<E>>;
+	fn process(&self, cx: &Provider, event: E);
+	fn type_id(&self) -> NamedTypeId;
+}
+
+impl<E, F> EventHandlerTrait<E> for F
+where
+	E: 'static,
+	F: 'static + Fn(&Provider, E) + Send + Sync + Clone,
+{
+	fn cloned(&self) -> Box<dyn EventHandlerTrait<E>> {
+		Box::new(self.clone())
+	}
+
+	fn process(&self, cx: &Provider, event: E) {
+		self(cx, event)
+	}
+
+	fn type_id(&self) -> NamedTypeId {
+		NamedTypeId::of::<Self>()
+	}
+}
+
+#[derive(Clone)]
+struct EventHandlerUniverseAdapter<F>(F);
+
+impl<E, F> EventHandlerTrait<E> for EventHandlerUniverseAdapter<F>
+where
+	E: 'static,
+	F: 'static + Fn(&Universe, E) + Send + Sync + Clone,
+{
+	fn cloned(&self) -> Box<dyn EventHandlerTrait<E>> {
+		Box::new(self.clone())
+	}
+
+	fn process(&self, cx: &Provider, event: E) {
+		self.0(cx.universe(), event)
+	}
+
+	fn type_id(&self) -> NamedTypeId {
+		NamedTypeId::of::<F>()
 	}
 }

@@ -25,7 +25,7 @@ use crate::{
 	util::{
 		eventual_map::EventualMap, no_hash::NoOpBuildHasher, ptr::PointeeCastExt, type_map::TypeMap,
 	},
-	Archetype, ArchetypeId, EventQueue, EventQueueIter, Storage,
+	Archetype, ArchetypeId, EventHandler, EventQueue, EventQueueIter, Storage,
 };
 
 // === Universe === //
@@ -112,11 +112,11 @@ impl Universe {
 	where
 		E: 'static,
 		F: 'static + Send + Sync,
-		F: Fn(&Self, EventQueueIter<E>),
+		F: Fn(&Self, EventQueueIter<E>) + Clone,
 	{
 		self.add_archetype_meta::<ArchetypeEventQueueHandler<E>>(
 			id,
-			ArchetypeEventQueueHandler(Box::new(handler)),
+			ArchetypeEventQueueHandler(EventHandler::new_universe(handler)),
 		);
 	}
 
@@ -205,7 +205,7 @@ impl Universe {
 				for iter in events.flush_all() {
 					let arch = iter.arch();
 					let handler = universe.archetype_meta::<ArchetypeEventQueueHandler<E>>(arch);
-					handler.0(universe, iter);
+					handler.0.process_universe(universe, iter);
 				}
 			},
 		);
@@ -369,16 +369,8 @@ impl LifetimeLike for TagId {
 
 // === Universe helpers === //
 
-pub struct ArchetypeEventQueueHandler<E>(
-	pub Box<dyn Fn(&Universe, EventQueueIter<E>) + 'static + Send + Sync>,
-);
-
-impl<E> fmt::Debug for ArchetypeEventQueueHandler<E> {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.debug_struct(format!("UniverseEventQueueHandler<{}>", type_name::<E>()).as_str())
-			.finish_non_exhaustive()
-	}
-}
+#[derive_where(Debug, Clone)]
+pub struct ArchetypeEventQueueHandler<E: 'static>(pub EventHandler<EventQueueIter<E>>);
 
 #[derive_where(Debug)]
 pub struct ArchetypeHandleResource<T: ?Sized>(pub ArchetypeHandle<T>);
