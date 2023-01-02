@@ -283,20 +283,20 @@ pub mod macro_internal {
 	#[macro_export]
 	macro_rules! unpack_internal_ty_acquire_guard {
 		($src:expr, @arch $ty:ty) => {
-			<$crate::universe::ResArch<$ty> as $crate::context::UnpackTarget<_>>::acquire_guard(
+			<$crate::universe::injection::ResArch<$ty> as $crate::context::UnpackTarget<_>>::acquire_guard(
 				$src,
 			)
 		};
 		($src:expr, @res $ty:ty) => {
-			<$crate::universe::Res<&$ty> as $crate::context::UnpackTarget<_>>::acquire_guard($src)
+			<$crate::universe::injection::Res<&$ty> as $crate::context::UnpackTarget<_>>::acquire_guard($src)
 		};
 		($src:expr, @mut $ty:ty) => {
-			<$crate::universe::ResRw<&mut $ty> as $crate::context::UnpackTarget<_>>::acquire_guard(
+			<$crate::universe::injection::ResRw<&mut $ty> as $crate::context::UnpackTarget<_>>::acquire_guard(
 				$src,
 			)
 		};
 		($src:expr, @ref $ty:ty) => {
-			<$crate::universe::ResRw<&$ty> as $crate::context::UnpackTarget<_>>::acquire_guard($src)
+			<$crate::universe::injection::ResRw<&$ty> as $crate::context::UnpackTarget<_>>::acquire_guard($src)
 		};
 		($src:expr, $ty:ty) => {
 			<$ty as $crate::context::UnpackTarget<_>>::acquire_guard($src)
@@ -306,16 +306,18 @@ pub mod macro_internal {
 	#[macro_export]
 	macro_rules! unpack_internal_ty_phantom_data {
 		(@arch $ty:ty) => {
-			$crate::context::macro_internal::PhantomData::<$crate::universe::ResArch<$ty>>
+			$crate::context::macro_internal::PhantomData::<$crate::universe::injection::ResArch<$ty>>
 		};
 		(@res $ty:ty) => {
-			$crate::context::macro_internal::PhantomData::<$crate::universe::Res<&$ty>>
+			$crate::context::macro_internal::PhantomData::<$crate::universe::injection::Res<&$ty>>
 		};
 		(@mut $ty:ty) => {
-			$crate::context::macro_internal::PhantomData::<$crate::universe::ResRw<&mut $ty>>
+			$crate::context::macro_internal::PhantomData::<
+				$crate::universe::injection::ResRw<&mut $ty>,
+			>
 		};
 		(@ref $ty:ty) => {
-			$crate::context::macro_internal::PhantomData::<$crate::universe::ResRw<&$ty>>
+			$crate::context::macro_internal::PhantomData::<$crate::universe::injection::ResRw<&$ty>>
 		};
 		($ty:ty) => {
 			$crate::context::macro_internal::PhantomData::<$ty>
