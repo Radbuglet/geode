@@ -228,12 +228,12 @@ impl Universe {
 		self.tags.flush();
 		self.resources.flush();
 
-		for archetype in mem::replace(self.dirty_archetypes.get_mut(), HashSet::new()) {
+		for archetype in mem::take(self.dirty_archetypes.get_mut()) {
 			self.archetypes[&archetype].meta.flush();
 		}
 
 		// Flush archetype deletions
-		for arch in mem::replace(&mut *self.destruction_list.archetypes.lock(), Vec::new()) {
+		for arch in mem::take(&mut *self.destruction_list.archetypes.lock()) {
 			// Remove archetype from archetype map
 			let arch_info = self.archetypes.remove(&arch).unwrap();
 
@@ -246,7 +246,7 @@ impl Universe {
 		}
 
 		// Flush tag deletions
-		for tag in mem::replace(&mut *self.destruction_list.tags.lock(), Vec::new()) {
+		for tag in mem::take(&mut *self.destruction_list.tags.lock()) {
 			// Remove tag from tag map
 			let tag_info = self.tags.remove(&tag).unwrap();
 
@@ -598,15 +598,15 @@ pub mod injection {
 
 		fn deref(&self) -> &Self::Target {
 			match self {
-				Self::Local(r) => &r,
-				Self::Universe(r) => &r,
+				Self::Local(r) => r,
+				Self::Universe(r) => r,
 			}
 		}
 	}
 
 	impl<T> Borrow<T> for ProviderResourceGuard<'_, T> {
 		fn borrow(&self) -> &T {
-			&self
+			self
 		}
 	}
 
@@ -621,15 +621,15 @@ pub mod injection {
 
 		fn deref(&self) -> &Self::Target {
 			match self {
-				Self::Local(r) => &r,
-				Self::Universe(r) => &r,
+				Self::Local(r) => r,
+				Self::Universe(r) => r,
 			}
 		}
 	}
 
 	impl<T> Borrow<T> for ProviderResourceRefGuard<'_, T> {
 		fn borrow(&self) -> &T {
-			&self
+			self
 		}
 	}
 
@@ -644,8 +644,8 @@ pub mod injection {
 
 		fn deref(&self) -> &Self::Target {
 			match self {
-				Self::Local(r) => &r,
-				Self::Universe(r) => &r,
+				Self::Local(r) => r,
+				Self::Universe(r) => r,
 			}
 		}
 	}
@@ -661,7 +661,7 @@ pub mod injection {
 
 	impl<T> Borrow<T> for ProviderResourceMutGuard<'_, T> {
 		fn borrow(&self) -> &T {
-			&self
+			self
 		}
 	}
 
@@ -682,7 +682,7 @@ pub mod injection {
 
 		fn deref(&self) -> &Self::Target {
 			match self {
-				Self::Local(r) => &r,
+				Self::Local(r) => r,
 				Self::Universe(r) => r.cast_marker_ref(),
 			}
 		}
@@ -699,7 +699,7 @@ pub mod injection {
 
 	impl<T: ?Sized> Borrow<Archetype<T>> for ProviderResourceArchGuard<'_, T> {
 		fn borrow(&self) -> &Archetype<T> {
-			&self
+			self
 		}
 	}
 

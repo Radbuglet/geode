@@ -96,7 +96,7 @@ impl<T: 'static> LocalPool<T> {
 
 		// ...and send it to the global pool once it fills up.
 		if self.indebted_pool.len() >= block_size {
-			let pool = mem::replace(&mut self.indebted_pool, Vec::new());
+			let pool = mem::take(&mut self.indebted_pool);
 			global.pools.lock().push(pool);
 		}
 	}
@@ -115,11 +115,11 @@ impl<T: 'static> Drop for LocalPool<T> {
 		let mut pools = global.pools.lock();
 
 		if !self.local_pool.is_empty() {
-			pools.push(mem::replace(&mut self.local_pool, Vec::new()));
+			pools.push(mem::take(&mut self.local_pool));
 		}
 
 		if !self.indebted_pool.is_empty() {
-			pools.push(mem::replace(&mut self.indebted_pool, Vec::new()));
+			pools.push(mem::take(&mut self.indebted_pool));
 		}
 	}
 }

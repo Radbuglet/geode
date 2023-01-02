@@ -121,7 +121,7 @@ impl<M: ?Sized> Archetype<M> {
 
 		// Construct handle
 		Entity {
-			lifetime: lifetime,
+			lifetime,
 			arch: self.id(),
 			slot,
 		}

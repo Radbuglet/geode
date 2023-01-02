@@ -51,7 +51,7 @@ mod db {
 					.collect::<Vec<_>>()
 					.leak();
 
-				values.into_iter().map(|v| &*v).collect()
+				values.iter().collect()
 			})
 		})
 	}
@@ -201,7 +201,7 @@ impl Lifetime {
 		};
 
 		match name {
-			Some(Some(name)) => &name,
+			Some(Some(name)) => name,
 			Some(None) => "<name unspecified>",
 			None => "<name unavailable>",
 		}

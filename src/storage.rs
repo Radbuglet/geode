@@ -224,7 +224,7 @@ impl<T> StorageRun<T> {
 
 		// Get slot
 		let slot_idx = entity.slot_usize();
-		if !(slot_idx < self.comps.len()) {
+		if slot_idx >= self.comps.len() {
 			self.comps.resize_with(slot_idx + 1, || None);
 		};
 		let slot = &mut self.comps[slot_idx];

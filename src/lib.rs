@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 pub mod bundle;
 pub mod context;
 pub mod debug;

@@ -67,7 +67,7 @@ impl<'r> Provider<'r> {
 	}
 
 	pub fn universe(&self) -> &Universe {
-		&self.universe
+		self.universe
 	}
 
 	pub fn add_ref<T: ?Sized + 'static>(&mut self, value: &'r T) {
@@ -268,6 +268,7 @@ pub mod macro_internal {
 				type Output = ($($para::Reference,)*);
 
 				#[allow(unused)]
+				#[allow(clippy::unused_unit)]
 				fn acquire_refs(self, _dummy_provider: &P, guards: &'borrow mut ($($para::Guard,)*)) -> Self::Output {
 					($($para::acquire_ref(&mut guards.$field),)*)
 				}

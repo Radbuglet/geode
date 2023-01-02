@@ -43,7 +43,7 @@ impl<E> EventQueue<E> {
 	}
 
 	pub fn flush_all(&mut self) -> impl Iterator<Item = EventQueueIter<E>> {
-		mem::replace(&mut self.runs, HashMap::default())
+		mem::take(&mut self.runs)
 			.into_iter()
 			.map(|(arch_id, (arch_lt, events_list))| {
 				EventQueueIter(

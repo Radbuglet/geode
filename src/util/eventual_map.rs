@@ -37,7 +37,7 @@ where
 		K: Borrow<Q>,
 	{
 		if let Some(established) = self.established.get(key) {
-			return Some(&established);
+			return Some(established);
 		}
 
 		let nursery_map = self.nursery.lock();
@@ -56,7 +56,7 @@ where
 	{
 		// See if we can acquire the component directly from the established map.
 		if let Some(established) = self.established.get(&key) {
-			return &established;
+			return established;
 		}
 
 		// Otherwise, see if it's a component in the nursery and acquire it from there.
@@ -155,7 +155,7 @@ where
 
 	pub fn flush(&mut self) {
 		self.established.extend(
-			mem::replace(self.nursery.get_mut(), HashMap::default())
+			mem::take(self.nursery.get_mut())
 				.into_iter()
 				.map(|(k, v)| (k, v.value.unwrap())),
 		)

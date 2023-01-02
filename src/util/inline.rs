@@ -79,6 +79,7 @@ impl<C> MaybeBoxed<C> {
 	}
 
 	pub unsafe fn copy(&self, layout: Layout) -> Self {
+		#[allow(clippy::collapsible_else_if)]
 		if InlineStore::<C>::can_hold_layout(layout) {
 			(self as *const Self).read()
 		} else {
