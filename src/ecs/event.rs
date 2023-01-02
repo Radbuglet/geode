@@ -2,7 +2,10 @@ use std::{any::type_name, collections::HashMap, mem, num::NonZeroU32, vec};
 
 use derive_where::derive_where;
 
-use crate::debug::lifetime::{DebugLifetime, Dependent};
+use crate::{
+	debug::lifetime::{DebugLifetime, Dependent},
+	mem::no_hash::NoOpBuildHasher,
+};
 
 use super::entity::{ArchetypeId, Entity};
 
@@ -18,7 +21,7 @@ pub type DestroyQueue = EventQueue<EntityDestroyEvent>;
 #[derive(Debug, Clone)]
 #[derive_where(Default)]
 pub struct EventQueue<E> {
-	runs: HashMap<NonZeroU32, (Dependent<DebugLifetime>, Vec<Event<E>>)>,
+	runs: HashMap<NonZeroU32, (Dependent<DebugLifetime>, Vec<Event<E>>), NoOpBuildHasher>,
 	maybe_recursively_dispatched: bool,
 }
 
@@ -41,7 +44,7 @@ impl<E> EventQueue<E> {
 	}
 
 	pub fn flush_all(&mut self) -> impl Iterator<Item = EventQueueIter<E>> {
-		mem::replace(&mut self.runs, HashMap::new())
+		mem::replace(&mut self.runs, HashMap::default())
 			.into_iter()
 			.map(|(arch_id, (arch_lt, events_list))| {
 				EventQueueIter(

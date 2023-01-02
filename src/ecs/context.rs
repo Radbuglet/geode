@@ -15,7 +15,7 @@ pub struct Provider<'r> {
 	_ty: PhantomData<&'r dyn any::Any>,
 	universe: &'r Universe,
 	parent: Option<&'r Provider<'r>>,
-	values: HashMap<NamedTypeId, (MaybeBoxedCopy<(usize, usize)>, RefCell<()>)>,
+	values: HashMap<NamedTypeId, (MaybeBoxedCopy<(usize, usize)>, RefCell<()>), FnvBuildHasher>,
 }
 
 impl<'r> fmt::Debug for Provider<'r> {
@@ -425,6 +425,7 @@ pub use {provider_from_tuple, unpack};
 // === Tuple context passing === //
 
 pub use compost::decompose;
+use fnv::FnvBuildHasher;
 pub use tuples::{CombinConcat, CombinRight};
 
 use super::universe::Universe;

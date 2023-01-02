@@ -1,4 +1,5 @@
 use derive_where::derive_where;
+use hibitset::BitSet;
 use std::{marker::PhantomData, mem::transmute, num::NonZeroU32};
 
 use parking_lot::Mutex;
@@ -8,8 +9,7 @@ use crate::{
 		label::{DebugLabel, NO_LABEL},
 		lifetime::{DebugLifetime, LifetimeLike},
 	},
-	lang::marker::PhantomInvariant,
-	mem::{drop_guard::DropOwnedGuard, free_list::PureFreeList, ptr::PointeeCastExt},
+	mem::{drop_guard::DropOwnedGuard, no_hash::RandIdGen, ptr::PointeeCastExt},
 };
 
 use super::bundle::Bundle;
@@ -73,43 +73,56 @@ impl LifetimeLike for Entity {
 
 // === Archetype === //
 
-static ARCH_ID_FREE_LIST: Mutex<PureFreeList<()>> = Mutex::new(PureFreeList::const_new());
+static ARCH_ID_FREE_LIST: Mutex<Option<RandIdGen>> = Mutex::new(None);
 
 #[derive_where(Debug)]
 #[repr(C)]
 pub struct Archetype<M: ?Sized = ()> {
-	_ty: PhantomInvariant<M>,
-	lifetime: DropOwnedGuard<DebugLifetime>,
-	slots: PureFreeList<DropOwnedGuard<DebugLifetime>>,
+	_ty: PhantomData<fn(M) -> M>,
 	id: NonZeroU32,
+	lifetime: DropOwnedGuard<DebugLifetime>,
+	slots: Vec<DropOwnedGuard<DebugLifetime>>,
+	free_slots: BitSet,
 }
 
 impl<M: ?Sized> Archetype<M> {
 	pub fn new<L: DebugLabel>(name: L) -> Self {
 		// Generate archetype ID
-		let mut free_arch_ids = ARCH_ID_FREE_LIST.lock();
-		let (_, id) = free_arch_ids.add(());
-		let id = id.checked_add(1).expect("created too many archetypes.");
-		let id = NonZeroU32::new(id).unwrap();
+		let id = ARCH_ID_FREE_LIST
+			.lock()
+			.get_or_insert_with(Default::default)
+			.alloc();
 
 		// Construct archetype
 		Self {
 			_ty: PhantomData,
 			id,
 			lifetime: DropOwnedGuard::new(DebugLifetime::new(name)),
-			slots: PureFreeList::new(),
+			slots: Vec::new(),
+			free_slots: BitSet::new(),
 		}
 	}
 
 	pub fn spawn<L: DebugLabel>(&mut self, name: L) -> Entity {
-		let (lifetime, slot) = self
-			.slots
-			.add(DropOwnedGuard::new(DebugLifetime::new(name)));
+		// Construct a lifetime
+		let lifetime = DebugLifetime::new(name);
 
-		assert_ne!(slot, u32::MAX, "spawned too many entities");
+		// Allocate a free slot
+		let slot = match (&self.free_slots).into_iter().next() {
+			Some(slot) => slot,
+			None => {
+				let slot = self.slots.len() as u32;
+				assert_ne!(slot, u32::MAX, "spawned too many entities");
 
+				self.slots.push(DropOwnedGuard::new(lifetime));
+				slot
+			}
+		};
+		self.free_slots.add(slot);
+
+		// Construct handle
 		Entity {
-			lifetime: **lifetime,
+			lifetime: lifetime,
 			arch: self.id(),
 			slot,
 		}
@@ -143,7 +156,7 @@ impl<M: ?Sized> Archetype<M> {
 			return;
 		}
 
-		let _ = self.slots.remove(entity.slot);
+		let _ = self.free_slots.remove(entity.slot);
 	}
 
 	pub fn despawn_and_extract(&mut self, cx: M::Context<'_>, entity: Entity) -> M
@@ -159,13 +172,6 @@ impl<M: ?Sized> Archetype<M> {
 		ArchetypeId {
 			lifetime: *self.lifetime,
 			id: self.id,
-		}
-	}
-
-	pub fn entities(&self) -> ArchetypeIter {
-		ArchetypeIter {
-			archetype: self.cast_marker_ref(),
-			slot: 0,
 		}
 	}
 
@@ -199,46 +205,9 @@ impl<M: ?Sized> Default for Archetype<M> {
 
 impl<M: ?Sized> Drop for Archetype<M> {
 	fn drop(&mut self) {
-		let mut free_arch_ids = ARCH_ID_FREE_LIST.lock();
-		free_arch_ids.remove(self.id.get() - 1);
-	}
-}
-
-#[derive(Debug, Clone)]
-pub struct ArchetypeIter<'a> {
-	archetype: &'a Archetype,
-	slot: u32,
-}
-
-impl Iterator for ArchetypeIter<'_> {
-	type Item = Entity;
-
-	fn next(&mut self) -> Option<Self::Item> {
-		let slots = self.archetype.slots.slots();
-
-		loop {
-			let slot = self.slot;
-			self.slot += 1;
-			match slots.get(slot as usize) {
-				Some(Some((lifetime, _))) => {
-					break Some(Entity {
-						lifetime: **lifetime,
-						arch: self.archetype.id(),
-						slot,
-					})
-				}
-				Some(None) => { /* fallthrough */ }
-				None => break None,
-			}
-		}
-	}
-}
-
-impl<'a, M: ?Sized> IntoIterator for &'a Archetype<M> {
-	type Item = Entity;
-	type IntoIter = ArchetypeIter<'a>;
-
-	fn into_iter(self) -> Self::IntoIter {
-		self.entities()
+		ARCH_ID_FREE_LIST
+			.lock()
+			.get_or_insert_with(Default::default)
+			.dealloc(self.id);
 	}
 }

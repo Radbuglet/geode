@@ -1,6 +1,6 @@
 use std::{
 	borrow::Borrow,
-	collections::{hash_map::RandomState, HashMap},
+	collections::HashMap,
 	hash::{self, BuildHasher},
 	mem,
 	ops::{Index, IndexMut},
@@ -14,7 +14,7 @@ use super::ptr::HeapPointerExt;
 
 #[derive(Debug)]
 #[derive_where(Default; S: Default)]
-pub struct EventualMap<K, V: ?Sized, S = RandomState> {
+pub struct EventualMap<K, V: ?Sized, S> {
 	established: HashMap<K, Box<V>, S>,
 	nursery: Mutex<HashMap<K, NurseryCell<V>, S>>,
 }
@@ -23,12 +23,6 @@ pub struct EventualMap<K, V: ?Sized, S = RandomState> {
 struct NurseryCell<V: ?Sized> {
 	once: Box<Once>,
 	value: Option<Box<V>>,
-}
-
-impl<K, V: ?Sized> EventualMap<K, V> {
-	pub fn new() -> Self {
-		Self::default()
-	}
 }
 
 impl<K, V, S> EventualMap<K, V, S>

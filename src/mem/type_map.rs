@@ -1,12 +1,14 @@
 use std::any::{type_name, Any};
 
+use fnv::FnvBuildHasher;
+
 use crate::debug::type_id::NamedTypeId;
 
 use super::eventual_map::EventualMap;
 
 #[derive(Debug, Default)]
 pub struct TypeMap {
-	map: EventualMap<NamedTypeId, dyn Any + Send + Sync>,
+	map: EventualMap<NamedTypeId, dyn Any + Send + Sync, FnvBuildHasher>,
 }
 
 impl TypeMap {

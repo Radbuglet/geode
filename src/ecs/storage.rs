@@ -2,7 +2,7 @@ use std::{any::type_name, collections::HashMap, fmt::Debug, num::NonZeroU32, ops
 
 use derive_where::derive_where;
 
-use crate::debug::lifetime::{DebugLifetime, Dependent, LifetimeLike};
+use crate::{debug::lifetime::{DebugLifetime, Dependent, LifetimeLike}, mem::no_hash::NoOpBuildHasher};
 
 use super::{
 	entity::{ArchetypeId, Entity},
@@ -21,13 +21,13 @@ fn failed_to_find_component<T>(entity: Entity) -> ! {
 #[derive_where(Default)]
 #[repr(transparent)]
 pub struct Storage<T> {
-	archetypes: HashMap<NonZeroU32, StorageRun<T>>,
+	archetypes: HashMap<NonZeroU32, StorageRun<T>, NoOpBuildHasher>,
 }
 
 impl<T> Storage<T> {
 	pub fn new() -> Self {
 		Self {
-			archetypes: HashMap::new(),
+			archetypes: HashMap::default(),
 		}
 	}
 

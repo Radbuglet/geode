@@ -15,6 +15,7 @@ use std::{
 };
 
 use derive_where::derive_where;
+use fnv::FnvBuildHasher;
 use parking_lot::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::{
@@ -22,10 +23,9 @@ use crate::{
 		label::{DebugLabel, ReifiedDebugLabel},
 		lifetime::{DebugLifetime, LifetimeLike},
 	},
-	lang::marker::PhantomInvariant,
 	mem::{
-		drop_guard::DropOwnedGuard, eventual_map::EventualMap, ptr::PointeeCastExt,
-		type_map::TypeMap,
+		drop_guard::DropOwnedGuard, eventual_map::EventualMap, no_hash::NoOpBuildHasher,
+		ptr::PointeeCastExt, type_map::TypeMap,
 	},
 };
 
@@ -40,8 +40,8 @@ use super::{
 
 #[derive(Debug, Default)]
 pub struct Universe {
-	archetypes: EventualMap<ArchetypeId, ArchetypeInner>,
-	tags: EventualMap<TagId, TagInner>,
+	archetypes: EventualMap<ArchetypeId, ArchetypeInner, NoOpBuildHasher>,
+	tags: EventualMap<TagId, TagInner, FnvBuildHasher>,
 	tag_alloc: AtomicU64,
 	dirty_archetypes: Mutex<HashSet<ArchetypeId>>,
 	resources: TypeMap,
@@ -273,7 +273,7 @@ impl Universe {
 #[derive_where(Debug)]
 #[repr(C)]
 pub struct ArchetypeHandle<M: ?Sized = ()> {
-	_ty: PhantomInvariant<M>,
+	_ty: PhantomData<fn(M) -> M>,
 	id: ArchetypeId,
 	destruction_list: Weak<DestructionList>,
 }
@@ -427,11 +427,11 @@ pub trait BuildableArchetypeBundle: 'static {
 
 // === Resource dependency injection in `Provider` === //
 
-pub struct Res<T>(PhantomInvariant<T>);
+pub struct Res<T>(PhantomData<fn(T) -> T>);
 
-pub struct ResRw<T>(PhantomInvariant<T>);
+pub struct ResRw<T>(PhantomData<fn(T) -> T>);
 
-pub struct ResArch<T: ?Sized>(PhantomInvariant<T>);
+pub struct ResArch<T: ?Sized>(PhantomData<fn(T) -> T>);
 
 impl<'guard: 'borrow, 'borrow> UnpackTarget<'guard, 'borrow, Universe> for &'borrow Universe {
 	type Guard = &'guard Universe;
