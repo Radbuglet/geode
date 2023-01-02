@@ -2,14 +2,14 @@ use super::entity::Entity;
 
 #[doc(hidden)]
 pub mod macro_internal {
-    pub use std::option::Option;
+	pub use std::option::Option;
 }
 
 pub trait Bundle: Sized {
-    type Context<'a>;
+	type Context<'a>;
 
-    fn attach(self, cx: Self::Context<'_>, target: Entity);
-    fn detach(cx: Self::Context<'_>, target: Entity) -> Self;
+	fn attach(self, cx: Self::Context<'_>, target: Entity);
+	fn detach(cx: Self::Context<'_>, target: Entity) -> Self;
 }
 
 #[macro_export]

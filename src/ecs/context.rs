@@ -1,165 +1,183 @@
 use std::{
-    any,
-    cell::{Ref, RefCell, RefMut},
-    fmt,
-    marker::PhantomData,
-    mem,
+	any,
+	cell::{Ref, RefCell, RefMut},
+	collections::HashMap,
+	fmt,
+	marker::PhantomData,
+	mem,
 };
-
-use hashbrown::HashMap;
 
 use crate::{debug::type_id::NamedTypeId, lang::macros::impl_tuples, mem::inline::MaybeBoxedCopy};
 
 // === Core === //
 
-#[derive(Default)]
 pub struct Provider<'r> {
-    _ty: PhantomData<&'r dyn any::Any>,
-    parent: Option<&'r Provider<'r>>,
-    values: HashMap<NamedTypeId, (MaybeBoxedCopy<(usize, usize)>, RefCell<()>)>,
+	_ty: PhantomData<&'r dyn any::Any>,
+	universe: &'r Universe,
+	parent: Option<&'r Provider<'r>>,
+	values: HashMap<NamedTypeId, (MaybeBoxedCopy<(usize, usize)>, RefCell<()>)>,
 }
 
 impl<'r> fmt::Debug for Provider<'r> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Provider")
-            .field("parent", &self.parent)
-            .field("keys", &self.values.keys().copied().collect::<Vec<_>>())
-            .finish_non_exhaustive()
-    }
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		f.debug_struct("Provider")
+			.field("parent", &self.parent)
+			.field("keys", &self.values.keys().copied().collect::<Vec<_>>())
+			.finish_non_exhaustive()
+	}
 }
 
 impl<'r> Provider<'r> {
-    pub fn new() -> Self {
-        Self::default()
-    }
+	pub fn new(universe: &'r Universe) -> Self {
+		Self {
+			_ty: PhantomData,
+			universe,
+			parent: None,
+			values: Default::default(),
+		}
+	}
 
-    pub fn new_with<T: ProviderEntries<'r>>(entries: T) -> Self {
-        Self::new().with(entries)
-    }
+	pub fn new_with<T: ProviderEntries<'r>>(universe: &'r Universe, entries: T) -> Self {
+		Self::new(universe).with(entries)
+	}
 
-    pub fn new_with_parent(parent: Option<&'r Provider<'r>>) -> Self {
-        Self {
-            _ty: PhantomData,
-            parent,
-            values: Default::default(),
-        }
-    }
+	pub fn new_with_parent(parent: &'r Provider<'r>) -> Self {
+		Self {
+			_ty: PhantomData,
+			universe: parent.universe,
+			parent: Some(parent),
+			values: Default::default(),
+		}
+	}
 
-    pub fn new_with_parent_and_comps<T: ProviderEntries<'r>>(
-        parent: Option<&'r Provider<'r>>,
-        entries: T,
-    ) -> Self {
-        Self::new_with_parent(parent).with(entries)
-    }
+	pub fn new_with_parent_and_comps<T: ProviderEntries<'r>>(
+		parent: &'r Provider<'r>,
+		entries: T,
+	) -> Self {
+		Self::new_with_parent(parent).with(entries)
+	}
 
-    pub fn parent(&self) -> Option<&'r Provider<'r>> {
-        self.parent
-    }
+	pub fn parent(&self) -> Option<&'r Provider<'r>> {
+		self.parent
+	}
 
-    pub fn add_ref<T: ?Sized + 'static>(&mut self, value: &'r T) {
-        let sentinel = RefCell::new(());
-        mem::forget(sentinel.borrow());
+	pub fn universe(&self) -> &Universe {
+		&self.universe
+	}
 
-        self.values.insert(
-            NamedTypeId::of::<T>(),
-            (MaybeBoxedCopy::new(value as *const T), sentinel),
-        );
-    }
+	pub fn add_ref<T: ?Sized + 'static>(&mut self, value: &'r T) {
+		let sentinel = RefCell::new(());
+		mem::forget(sentinel.borrow());
 
-    pub fn add_mut<T: ?Sized + 'static>(&mut self, value: &'r mut T) {
-        self.values.insert(
-            NamedTypeId::of::<T>(),
-            (MaybeBoxedCopy::new(value as *const T), RefCell::new(())),
-        );
-    }
+		self.values.insert(
+			NamedTypeId::of::<T>(),
+			(MaybeBoxedCopy::new(value as *const T), sentinel),
+		);
+	}
 
-    fn try_get_entry<T: ?Sized + 'static>(
-        &self,
-    ) -> Option<&(MaybeBoxedCopy<(usize, usize)>, RefCell<()>)> {
-        let mut iter = Some(self);
+	pub fn add_mut<T: ?Sized + 'static>(&mut self, value: &'r mut T) {
+		self.values.insert(
+			NamedTypeId::of::<T>(),
+			(MaybeBoxedCopy::new(value as *const T), RefCell::new(())),
+		);
+	}
 
-        while let Some(curr) = iter {
-            if let Some(entry) = curr.values.get(&NamedTypeId::of::<T>()) {
-                return Some(entry);
-            }
-            iter = curr.parent;
-        }
+	fn try_get_entry<T: ?Sized + 'static>(
+		&self,
+	) -> Option<&(MaybeBoxedCopy<(usize, usize)>, RefCell<()>)> {
+		if NamedTypeId::of::<T>() == NamedTypeId::of::<Universe>() {
+			log::warn!(
+				"Attempting to fetch a `Universe` component from a `Provider`. \
+			     This is likely an error because `universes` are passed as a field in the `Provider` \
+				 and are accessible through `Provider::universe()` and are therefore almost never passed \
+				 as a component."
+			);
+		}
 
-        None
-    }
+		let mut iter = Some(self);
 
-    pub fn try_get<T: ?Sized + 'static>(&self) -> Option<Ref<T>> {
-        self.try_get_entry::<T>().map(|(ptr, sentinel)| {
-            let guard = sentinel.borrow();
+		while let Some(curr) = iter {
+			if let Some(entry) = curr.values.get(&NamedTypeId::of::<T>()) {
+				return Some(entry);
+			}
+			iter = curr.parent;
+		}
 
-            Ref::map(guard, |_| unsafe {
-                let ptr = ptr.get::<*const T>();
-                &*ptr
-            })
-        })
-    }
+		None
+	}
 
-    pub fn get<T: ?Sized + 'static>(&self) -> Ref<T> {
-        self.try_get().unwrap_or_else(|| self.comp_not_found::<T>())
-    }
+	pub fn try_get<T: ?Sized + 'static>(&self) -> Option<Ref<T>> {
+		self.try_get_entry::<T>().map(|(ptr, sentinel)| {
+			let guard = sentinel.borrow();
 
-    pub fn try_get_mut<T: ?Sized + 'static>(&self) -> Option<RefMut<T>> {
-        self.try_get_entry::<T>().map(|(ptr, sentinel)| {
-            let guard = sentinel.borrow_mut();
+			Ref::map(guard, |_| unsafe {
+				let ptr = ptr.get::<*const T>();
+				&*ptr
+			})
+		})
+	}
 
-            RefMut::map(guard, |_| unsafe {
-                let ptr = ptr.get::<*mut T>();
-                &mut *ptr
-            })
-        })
-    }
+	pub fn get<T: ?Sized + 'static>(&self) -> Ref<T> {
+		self.try_get().unwrap_or_else(|| self.comp_not_found::<T>())
+	}
 
-    pub fn get_mut<T: ?Sized + 'static>(&self) -> RefMut<T> {
-        self.try_get_mut()
-            .unwrap_or_else(|| self.comp_not_found::<T>())
-    }
+	pub fn try_get_mut<T: ?Sized + 'static>(&self) -> Option<RefMut<T>> {
+		self.try_get_entry::<T>().map(|(ptr, sentinel)| {
+			let guard = sentinel.borrow_mut();
 
-    fn comp_not_found<T: ?Sized + 'static>(&self) -> ! {
-        panic!(
-            "Could not find component of type {:?} in provider {:?}",
-            NamedTypeId::of::<T>(),
-            self,
-        );
-    }
+			RefMut::map(guard, |_| unsafe {
+				let ptr = ptr.get::<*mut T>();
+				&mut *ptr
+			})
+		})
+	}
+
+	pub fn get_mut<T: ?Sized + 'static>(&self) -> RefMut<T> {
+		self.try_get_mut()
+			.unwrap_or_else(|| self.comp_not_found::<T>())
+	}
+
+	fn comp_not_found<T: ?Sized + 'static>(&self) -> ! {
+		panic!(
+			"Could not find component of type {:?} in provider {:?}",
+			NamedTypeId::of::<T>(),
+			self,
+		);
+	}
 }
 
 // === Insertion helpers === //
 
 impl<'r> Provider<'r> {
-    pub fn with<T: ProviderEntries<'r>>(mut self, item: T) -> Self {
-        item.add_to_provider(&mut self);
-        self
-    }
+	pub fn with<T: ProviderEntries<'r>>(mut self, item: T) -> Self {
+		item.add_to_provider(&mut self);
+		self
+	}
 }
 
 pub trait ProviderEntries<'a> {
-    fn add_to_provider(self, provider: &mut Provider<'a>);
-    fn add_to_provider_ref(&'a mut self, provider: &mut Provider<'a>);
+	fn add_to_provider(self, provider: &mut Provider<'a>);
+	fn add_to_provider_ref(&'a mut self, provider: &mut Provider<'a>);
 }
 
 impl<'a: 'b, 'b, T: ?Sized + 'static> ProviderEntries<'b> for &'a T {
-    fn add_to_provider(self, provider: &mut Provider<'b>) {
-        provider.add_ref(self)
-    }
+	fn add_to_provider(self, provider: &mut Provider<'b>) {
+		provider.add_ref(self)
+	}
 
-    fn add_to_provider_ref(&'b mut self, provider: &mut Provider<'b>) {
-        provider.add_ref(*self)
-    }
+	fn add_to_provider_ref(&'b mut self, provider: &mut Provider<'b>) {
+		provider.add_ref(*self)
+	}
 }
 
 impl<'a: 'b, 'b, T: ?Sized + 'static> ProviderEntries<'b> for &'a mut T {
-    fn add_to_provider(self, provider: &mut Provider<'b>) {
-        provider.add_mut(self)
-    }
+	fn add_to_provider(self, provider: &mut Provider<'b>) {
+		provider.add_mut(self)
+	}
 
-    fn add_to_provider_ref(&'b mut self, provider: &mut Provider<'b>) {
-        provider.add_mut(*self)
-    }
+	fn add_to_provider_ref(&'b mut self, provider: &mut Provider<'b>) {
+		provider.add_mut(*self)
+	}
 }
 
 macro_rules! impl_provider_entries {
@@ -183,60 +201,60 @@ impl_tuples!(impl_provider_entries);
 // === `unpack!` traits === //
 
 pub trait UnpackTarget<'guard: 'borrow, 'borrow, P: ?Sized> {
-    type Guard;
-    type Reference;
+	type Guard;
+	type Reference;
 
-    fn acquire_guard(src: &'guard P) -> Self::Guard;
-    fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference;
+	fn acquire_guard(src: &'guard P) -> Self::Guard;
+	fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference;
 }
 
 impl<'provider, 'guard: 'borrow, 'borrow, T: ?Sized + 'static>
-    UnpackTarget<'guard, 'borrow, Provider<'provider>> for &'borrow T
+	UnpackTarget<'guard, 'borrow, Provider<'provider>> for &'borrow T
 {
-    type Guard = Ref<'guard, T>;
-    type Reference = Self;
+	type Guard = Ref<'guard, T>;
+	type Reference = Self;
 
-    fn acquire_guard(src: &'guard Provider) -> Self::Guard {
-        src.get()
-    }
+	fn acquire_guard(src: &'guard Provider) -> Self::Guard {
+		src.get()
+	}
 
-    fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference {
-        &*guard
-    }
+	fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference {
+		&*guard
+	}
 }
 
 impl<'provider, 'guard: 'borrow, 'borrow, T: ?Sized + 'static>
-    UnpackTarget<'guard, 'borrow, Provider<'provider>> for &'borrow mut T
+	UnpackTarget<'guard, 'borrow, Provider<'provider>> for &'borrow mut T
 {
-    type Guard = RefMut<'guard, T>;
-    type Reference = Self;
+	type Guard = RefMut<'guard, T>;
+	type Reference = Self;
 
-    fn acquire_guard(src: &'guard Provider) -> Self::Guard {
-        src.get_mut()
-    }
+	fn acquire_guard(src: &'guard Provider) -> Self::Guard {
+		src.get_mut()
+	}
 
-    fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference {
-        &mut *guard
-    }
+	fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference {
+		&mut *guard
+	}
 }
 
 // === `unpack!` macro === //
 
 #[doc(hidden)]
 pub mod macro_internal {
-    use super::*;
+	use super::*;
 
-    // === `unpack!` stuff === //
+	// === `unpack!` stuff === //
 
-    pub use std::marker::PhantomData;
+	pub use std::marker::PhantomData;
 
-    pub trait UnpackTargetTuple<'guard: 'borrow, 'borrow, P: ?Sized, I> {
-        type Output;
+	pub trait UnpackTargetTuple<'guard: 'borrow, 'borrow, P: ?Sized, I> {
+		type Output;
 
-        fn acquire_refs(self, _dummy_provider: &P, input: &'borrow mut I) -> Self::Output;
-    }
+		fn acquire_refs(self, _dummy_provider: &P, input: &'borrow mut I) -> Self::Output;
+	}
 
-    macro_rules! impl_guard_tuples_as_refs {
+	macro_rules! impl_guard_tuples_as_refs {
 		($($para:ident:$field:tt),*) => {
 			impl<'guard: 'borrow, 'borrow, P: ?Sized, $($para: UnpackTarget<'guard, 'borrow, P>),*>
 				UnpackTargetTuple<'guard, 'borrow, P, ($($para::Guard,)*)>
@@ -252,13 +270,13 @@ pub mod macro_internal {
 		};
 	}
 
-    impl_tuples!(impl_guard_tuples_as_refs);
+	impl_tuples!(impl_guard_tuples_as_refs);
 
-    // TODO: It may look like we could take these two expression macros and combine them into one
-    // type macro, which would be nice, but rust-analyzer doesn't seem to support type macros correctly
-    // so this is the easiest way to preserve IDE completions while implementing this feature.
-    #[macro_export]
-    macro_rules! unpack_internal_ty_acquire_guard {
+	// TODO: It may look like we could take these two expression macros and combine them into one
+	// type macro, which would be nice, but rust-analyzer doesn't seem to support type macros correctly
+	// so this is the easiest way to preserve IDE completions while implementing this feature.
+	#[macro_export]
+	macro_rules! unpack_internal_ty_acquire_guard {
 		($src:expr, @arch $ty:ty) => {
 			<$crate::ecs::universe::ResArch<$ty> as $crate::ecs::context::UnpackTarget<_>>::acquire_guard($src)
 		};
@@ -276,32 +294,32 @@ pub mod macro_internal {
 		};
 	}
 
-    #[macro_export]
-    macro_rules! unpack_internal_ty_phantom_data {
-        (@arch $ty:ty) => {
-            $crate::ecs::context::macro_internal::PhantomData::<$crate::ecs::universe::ResArch<$ty>>
-        };
-        (@res $ty:ty) => {
-            $crate::ecs::context::macro_internal::PhantomData::<$crate::ecs::universe::Res<&$ty>>
-        };
-        (@mut $ty:ty) => {
-            $crate::ecs::context::macro_internal::PhantomData::<
-                $crate::ecs::universe::ResRw<&mut $ty>,
-            >
-        };
-        (@ref $ty:ty) => {
-            $crate::ecs::context::macro_internal::PhantomData::<$crate::ecs::universe::ResRw<&$ty>>
-        };
-        ($ty:ty) => {
-            $crate::ecs::context::macro_internal::PhantomData::<$ty>
-        };
-    }
+	#[macro_export]
+	macro_rules! unpack_internal_ty_phantom_data {
+		(@arch $ty:ty) => {
+			$crate::ecs::context::macro_internal::PhantomData::<$crate::ecs::universe::ResArch<$ty>>
+		};
+		(@res $ty:ty) => {
+			$crate::ecs::context::macro_internal::PhantomData::<$crate::ecs::universe::Res<&$ty>>
+		};
+		(@mut $ty:ty) => {
+			$crate::ecs::context::macro_internal::PhantomData::<
+				$crate::ecs::universe::ResRw<&mut $ty>,
+			>
+		};
+		(@ref $ty:ty) => {
+			$crate::ecs::context::macro_internal::PhantomData::<$crate::ecs::universe::ResRw<&$ty>>
+		};
+		($ty:ty) => {
+			$crate::ecs::context::macro_internal::PhantomData::<$ty>
+		};
+	}
 
-    // === `provider_from_tuple!` macro === //
+	// === `provider_from_tuple!` macro === //
 
-    pub struct ProviderFromDecomposedTuple<T>(pub T);
+	pub struct ProviderFromDecomposedTuple<T>(pub T);
 
-    macro_rules! impl_provider_entries {
+	macro_rules! impl_provider_entries {
 		($($para:ident:$field:tt),*) => {
 			impl<'a, $($para: 'a + ProviderEntries<'a>),*>
 				ProviderEntries<'a> for
@@ -320,7 +338,7 @@ pub mod macro_internal {
 		};
 	}
 
-    impl_tuples!(impl_provider_entries);
+	impl_tuples!(impl_provider_entries);
 }
 
 #[macro_export]
@@ -408,3 +426,5 @@ pub use {provider_from_tuple, unpack};
 
 pub use compost::decompose;
 pub use tuples::{CombinConcat, CombinRight};
+
+use super::universe::Universe;

@@ -1,6 +1,6 @@
 use std::{
 	borrow::Borrow,
-	collections::hash_map::RandomState,
+	collections::{hash_map::RandomState, HashMap},
 	hash::{self, BuildHasher},
 	mem,
 	ops::{Index, IndexMut},
@@ -8,7 +8,6 @@ use std::{
 };
 
 use derive_where::derive_where;
-use hashbrown::HashMap;
 use parking_lot::Mutex;
 
 use super::ptr::HeapPointerExt;
@@ -151,8 +150,8 @@ where
 		value
 	}
 
-	pub fn insert(&mut self, key: K, value: Box<V>) -> &mut V {
-		self.established.entry(key).insert(value).into_mut()
+	pub fn insert(&mut self, key: K, value: Box<V>) {
+		self.established.insert(key, value);
 	}
 
 	pub fn remove<Q>(&mut self, key: &Q) -> Option<Box<V>>

@@ -1,11 +1,10 @@
-use std::{any::type_name, mem, vec};
+use std::{any::type_name, collections::HashMap, mem, num::NonZeroU32, vec};
 
 use derive_where::derive_where;
-use hashbrown::HashMap;
 
 use crate::debug::lifetime::{DebugLifetime, Dependent};
 
-use super::entity::{ArchetypeId, ArchetypeMap, Entity};
+use super::entity::{ArchetypeId, Entity};
 
 // === Aliases === //
 
@@ -19,7 +18,7 @@ pub type DestroyQueue = EventQueue<EntityDestroyEvent>;
 #[derive(Debug, Clone)]
 #[derive_where(Default)]
 pub struct EventQueue<E> {
-	runs: ArchetypeMap<Vec<Event<E>>>,
+	runs: HashMap<NonZeroU32, (Dependent<DebugLifetime>, Vec<Event<E>>)>,
 	maybe_recursively_dispatched: bool,
 }
 
@@ -29,17 +28,12 @@ impl<E> EventQueue<E> {
 	}
 
 	pub fn push(&mut self, target: Entity, event: E) {
-		let run = if let Some(run) = self.runs.get_mut(&target.arch) {
-			run
-		} else {
+		let run = self.runs.entry(target.arch.id).or_insert_with(|| {
 			self.maybe_recursively_dispatched = true;
+			(Dependent::new(target.arch.lifetime), Vec::new())
+		});
 
-			self.runs
-				.insert_unique_unchecked(Dependent::new(target.arch), Vec::new())
-				.1
-		};
-
-		run.push(Event {
+		run.1.push(Event {
 			slot: target.slot,
 			lifetime: Dependent::new(target.lifetime),
 			event,
@@ -49,15 +43,23 @@ impl<E> EventQueue<E> {
 	pub fn flush_all(&mut self) -> impl Iterator<Item = EventQueueIter<E>> {
 		mem::replace(&mut self.runs, HashMap::new())
 			.into_iter()
-			.map(|(arch, events_list)| EventQueueIter(arch.into_inner(), events_list.into_iter()))
+			.map(|(arch_id, (arch_lt, events_list))| {
+				EventQueueIter(
+					ArchetypeId {
+						id: arch_id,
+						lifetime: arch_lt.into_inner(),
+					},
+					events_list.into_iter(),
+				)
+			})
 	}
 
 	pub fn flush_in(&mut self, archetype: ArchetypeId) -> EventQueueIter<E> {
 		EventQueueIter(
 			archetype,
 			self.runs
-				.remove(&archetype)
-				.unwrap_or(Vec::new())
+				.remove(&archetype.id)
+				.map_or(Vec::new(), |(_, events)| events)
 				.into_iter(),
 		)
 	}
@@ -78,7 +80,7 @@ impl<E> EventQueue<E> {
 impl<E> Drop for EventQueue<E> {
 	fn drop(&mut self) {
 		if !self.runs.is_empty() {
-			let leaked_count = self.runs.values().map(|run| run.len()).sum::<usize>();
+			let leaked_count = self.runs.values().map(|(_, run)| run.len()).sum::<usize>();
 
 			log::error!(
 				"Leaked {leaked_count} event{} from {}",
