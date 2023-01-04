@@ -133,10 +133,11 @@ impl<M: ?Sized> Archetype<M> {
 				let slot = self.slots.len() as u32;
 				assert_ne!(slot, u32::MAX, "spawned too many entities");
 
-				self.slots.push(Some(OwnedLifetime::new(lifetime)));
+				self.slots.push(None);
 				slot
 			}
 		};
+		self.slots[slot as usize] = Some(OwnedLifetime::new(lifetime));
 
 		// Construct handle
 		Entity {
