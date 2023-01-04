@@ -97,7 +97,7 @@ pub struct Archetype<M: ?Sized = ()> {
 	_ty: PhantomData<fn(M) -> M>,
 	id: NonZeroU32,
 	lifetime: OwnedLifetime<DebugLifetime>,
-	slots: Vec<OwnedLifetime<DebugLifetime>>,
+	slots: Vec<Option<OwnedLifetime<DebugLifetime>>>,
 	free_slots: BitSet,
 }
 
@@ -125,16 +125,18 @@ impl<M: ?Sized> Archetype<M> {
 
 		// Allocate a free slot
 		let slot = match (&self.free_slots).into_iter().next() {
-			Some(slot) => slot,
+			Some(slot) => {
+				self.free_slots.remove(slot);
+				slot
+			}
 			None => {
 				let slot = self.slots.len() as u32;
 				assert_ne!(slot, u32::MAX, "spawned too many entities");
 
-				self.slots.push(OwnedLifetime::new(lifetime));
+				self.slots.push(Some(OwnedLifetime::new(lifetime)));
 				slot
 			}
 		};
-		self.free_slots.add(slot);
 
 		// Construct handle
 		Entity {
@@ -172,7 +174,8 @@ impl<M: ?Sized> Archetype<M> {
 			return;
 		}
 
-		let _ = self.free_slots.remove(entity.slot);
+		self.free_slots.add(entity.slot);
+		self.slots[entity.slot_usize()] = None;
 	}
 
 	pub fn despawn_and_extract(&mut self, cx: M::Context<'_>, entity: Entity) -> M
@@ -225,5 +228,51 @@ impl<M: ?Sized> Drop for Archetype<M> {
 			.lock()
 			.get_or_insert_with(Default::default)
 			.dealloc(self.id);
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn ids_are_unique() {
+		// TODO: Trap on erroneous logs.
+
+		let mut arch_1 = Archetype::<()>::new("Archetype 1");
+		let mut arch_2 = Archetype::<()>::new("Archetype 2");
+
+		assert_ne!(arch_1.id(), arch_2.id());
+
+		let entity_1 = arch_1.spawn("Entity 1");
+		let entity_2 = arch_1.spawn("Entity 2");
+		let entity_3 = arch_2.spawn("Entity 3");
+		let entity_4 = arch_2.spawn("Entity 4");
+
+		assert_eq!(entity_1.slot, 0);
+		assert_eq!(entity_2.slot, 1);
+		assert_eq!(entity_3.slot, 0);
+		assert_eq!(entity_4.slot, 1);
+
+		arch_1.despawn(entity_1);
+
+		let entity_5 = arch_1.spawn("Entity 5");
+		assert_eq!(entity_5.slot, 0);
+
+		let entity_6 = arch_1.spawn("Entity 6");
+		assert_eq!(entity_6.slot, 2);
+
+		assert!(!entity_1.lifetime.raw().unwrap().is_alive());
+		assert!(entity_2.lifetime.raw().unwrap().is_alive());
+		assert!(entity_3.lifetime.raw().unwrap().is_alive());
+		assert!(entity_4.lifetime.raw().unwrap().is_alive());
+		assert!(entity_5.lifetime.raw().unwrap().is_alive());
+		assert!(entity_6.lifetime.raw().unwrap().is_alive());
+
+		arch_2.despawn(entity_3);
+		assert!(!entity_3.lifetime.raw().unwrap().is_alive());
+
+		let entity_7 = arch_2.spawn("Entity 7");
+		assert_eq!(entity_7.slot, 0);
 	}
 }
