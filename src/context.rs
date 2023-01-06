@@ -355,6 +355,75 @@ pub mod macro_internal {
 
 #[macro_export]
 macro_rules! unpack {
+	// Guarded struct unpack with context
+	($out_tup:ident & $out_tup_rest:ident = $src:expr => {
+		$(
+			$name_bound:ident: $(@$anno_bound:ident)? $ty_bound:ty
+		),*
+		$(, $(...:
+			$($(@$anno_unbound:ident)? $ty_unbound:ty),*
+			$(,)?
+		)?)?
+	}) => {
+		let src = $src;
+		let mut guard;
+		let mut $out_tup = $crate::unpack!(src => guard & (
+			$($(@$anno_bound)? $ty_bound,)*
+			$($(
+				$($(@$anno_unbound)? $ty_unbound,)*
+			)?)?
+		));
+
+		let (($($name_bound,)*), mut $out_tup_rest) = {
+			#[allow(non_camel_case_types)]
+			fn identity_helper<'guard: 'borrow, 'borrow, P: ?Sized, R, $($name_bound: $crate::context::UnpackTarget<'guard, 'borrow, P>),*>(
+				_dummy_provider: &P,
+				_dummy_targets: ($($crate::context::macro_internal::PhantomData<$name_bound>,)*),
+				v: (($(<$name_bound as $crate::context::UnpackTarget<'guard, 'borrow, P>>::Reference,)*), R),
+			) -> (($(<$name_bound as $crate::context::UnpackTarget<'guard, 'borrow, P>>::Reference,)*), R) {
+				v
+			}
+
+			identity_helper(
+				src,
+				($($crate::unpack_internal_ty_phantom_data!($(@$anno_bound)? $ty_bound),)*),
+				$crate::decompose!(...$out_tup),
+			)
+		};
+	};
+	($out_tup:ident = $src:expr => {
+		$(
+			$name_bound:ident: $(@$anno_bound:ident)? $ty_bound:ty
+		),*
+		$(, $(...:
+			$($(@$anno_unbound:ident)? $ty_unbound:ty),*
+			$(,)?
+		)?)?
+	}) => {
+		$crate::unpack!($out_tup & $out_tup = $src => {
+			$(
+				$name_bound: $(@$anno_bound)? $ty_bound
+			),*
+			$(
+				,
+				$(...:
+					$($(@$anno_unbound)? $ty_unbound),*
+				)?
+			)?
+		});
+	};
+	($out_tup:ident = $src:expr => (
+		$($(@$anno_unbound:ident)? $ty_unbound:ty),*
+		$(,)?
+	)) => {
+		$crate::unpack!($out_tup & _ignore = $src => {
+			,...: $(
+				$(@$anno_unbound)?
+				$ty_unbound
+			),*
+		});
+	};
+
 	// Guarded tuple unpack
 	($src:expr => $guard:ident & (
 		$(
@@ -410,67 +479,6 @@ macro_rules! unpack {
 		let ($($name,)*) = $crate::unpack!($src => (
 			$($(@$anno)? $ty),*
 		));
-	};
-
-	// Guarded struct unpack with context
-	($out_tup:ident & $out_tup_rest:ident = $src:expr => {
-		$(
-			$name_bound:ident: $(@$anno_bound:ident)? $ty_bound:ty
-		),*
-		$(
-			,
-			$(...:
-				$($(@$anno_unbound:ident)? $ty_unbound:ty),*
-				$(,)?
-			)?
-		)?
-	}) => {
-		let mut guard;
-		let mut $out_tup = $crate::unpack!($src => guard & (
-			$($(@$anno_bound)? $ty_bound,)*
-			$($(
-				$($(@$anno_unbound)? $ty_unbound,)*
-			)?)?
-		));
-
-		let (($($name_bound,)*), mut $out_tup_rest) = {
-			#[allow(non_camel_case_types)]
-			fn identity_helper<'guard: 'borrow, 'borrow, P, R, $($name_bound: $crate::context::UnpackTarget<'guard, 'borrow, P>),*>(
-				_dummy: ($($crate::context::macro_internal::PhantomData<$name_bound>,)*),
-				v: (($(<$name_bound as $crate::context::UnpackTarget<'guard, 'borrow, P>>::Reference,)*), R),
-			) -> (($(<$name_bound as $crate::context::UnpackTarget<'guard, 'borrow, P>>::Reference,)*), R) {
-				v
-			}
-
-			identity_helper(
-				($($crate::unpack_internal_ty_phantom_data!($(@$anno_bound)? $ty_bound),)*),
-				$crate::decompose!(...$out_tup),
-			)
-		};
-	};
-	($out_tup:ident = $src:expr => {
-		$(
-			$name_bound:ident: $(@$anno_bound:ident)? $ty_bound:ty
-		),*
-		$(
-			,
-			$(...:
-				$($(@$anno_unbound:ident)? $ty_unbound:ty),*
-				$(,)?
-			)?
-		)?
-	}) => {
-		$crate::unpack!($out_tup & $out_tup = $src => {
-			$(
-				$name_bound: $(@$anno_bound)? $ty_bound
-			),*
-			$(
-				,
-				$(...:
-					$($(@$anno_unbound)? $ty_unbound),*
-				)?
-			)?
-		});
 	};
 }
 
