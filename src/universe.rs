@@ -189,9 +189,26 @@ impl Universe {
 		self.resource()
 	}
 
-	pub fn archetype<T: ?Sized + BuildableArchetypeBundle>(&self) -> &Mutex<Archetype<()>> {
-		let id = self.resource::<ArchetypeHandleResource<T>>().id();
-		self.archetype_by_id(id)
+	pub fn archetype_resource_id<T: ?Sized + BuildableArchetypeBundle>(&self) -> ArchetypeId {
+		self.resource::<ArchetypeHandleResource<T>>().id()
+	}
+
+	pub fn archetype<T: ?Sized + BuildableArchetypeBundle>(
+		&self,
+	) -> MappedMutexGuard<Archetype<T>> {
+		let id = self.archetype_resource_id::<T>();
+		MutexGuard::map(self.archetype_by_id(id).try_lock().unwrap(), |arch| {
+			arch.cast_marker_mut()
+		})
+	}
+
+	pub fn archetype_blocking<T: ?Sized + BuildableArchetypeBundle>(
+		&self,
+	) -> MappedMutexGuard<Archetype<T>> {
+		let id = self.archetype_resource_id::<T>();
+		MutexGuard::map(self.archetype_by_id(id).lock(), |arch| {
+			arch.cast_marker_mut()
+		})
 	}
 
 	pub fn storage<T: 'static + Send + Sync>(&self) -> RwLockReadGuard<Storage<T>> {
@@ -293,6 +310,31 @@ impl<M: ?Sized> ArchetypeHandle<M> {
 		self.id
 	}
 
+	pub fn get<'a>(&self, universe: &'a Universe) -> MappedMutexGuard<'a, Archetype<M>> {
+		universe.archetype_by_handle(self)
+	}
+
+	pub fn get_blocking<'a>(&self, universe: &'a Universe) -> MappedMutexGuard<'a, Archetype<M>> {
+		universe.archetype_by_handle_blocking(self)
+	}
+
+	pub fn annotate<T: 'static + Send + Sync>(&self, universe: &Universe, value: T) {
+		universe.add_archetype_meta(self.id(), value);
+	}
+
+	pub fn tag(&self, universe: &Universe, tag: TagId) {
+		universe.tag_archetype(self.id(), tag)
+	}
+
+	pub fn add_queue_handler<E, F>(&self, universe: &Universe, handler: F)
+	where
+		E: 'static,
+		F: 'static + Send + Sync,
+		F: Fn(&Universe, EventQueueIter<E>) + Clone,
+	{
+		universe.add_archetype_queue_handler(self.id(), handler);
+	}
+
 	pub fn cast_marker<N: ?Sized>(self) -> ArchetypeHandle<N> {
 		unsafe {
 			// Safety: This struct is `repr(C)` and `N` is only ever used in a `PhantomData`.
@@ -341,6 +383,14 @@ pub struct TagHandle {
 impl TagHandle {
 	pub fn id(&self) -> TagId {
 		self.id
+	}
+
+	pub fn add(&self, universe: &Universe, arch: ArchetypeId) {
+		universe.tag_archetype(arch, self.id())
+	}
+
+	pub fn tagged(&self, universe: &Universe) -> HashSet<ArchetypeId> {
+		universe.tagged_archetypes(self.id())
 	}
 }
 
@@ -515,7 +565,8 @@ pub mod injection {
 		type Reference = &'borrow mut Archetype<T>;
 
 		fn acquire_guard(src: &'guard Universe) -> Self::Guard {
-			src.archetype::<T>().try_lock().unwrap()
+			let id = src.archetype_resource_id::<T>();
+			src.archetype_by_id(id).try_lock().unwrap()
 		}
 
 		fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference {
@@ -591,7 +642,11 @@ pub mod injection {
 				return ProviderResourceArchGuard::Local(value);
 			}
 
-			ProviderResourceArchGuard::Universe(src.universe().archetype::<T>().try_lock().unwrap())
+			let universe = src.universe();
+			let arch_id = universe.archetype_resource_id::<T>();
+			let arch_mutex = universe.archetype_by_id(arch_id);
+
+			ProviderResourceArchGuard::Universe(arch_mutex.try_lock().unwrap())
 		}
 
 		fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference {

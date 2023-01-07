@@ -62,6 +62,14 @@ impl<'r> Provider<'r> {
 		Self::new_with_parent(parent).with(entries)
 	}
 
+	pub fn spawn_child<'c>(&'c self) -> Provider<'c> {
+		Provider::new_with_parent(self)
+	}
+
+	pub fn spawn_child_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c> {
+		Provider::new_with_parent(self).with(entries)
+	}
+
 	pub fn parent(&self) -> Option<&'r Provider<'r>> {
 		self.parent
 	}
