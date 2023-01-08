@@ -4,14 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-compost = "0.3.0"
+compost = { git = "https://github.com/Radbuglet/compost.git", rev = "0d532ccb26d79e9f043cc22faf66c806a40aeb74" }
 derive-where = "1.0.0"
 fastrand = "1.8.0"
 fnv = "1.0.3"
 hibitset = "0.6.3"
 log = "0.4.17"
 parking_lot = "0.12.1"
-tuples = { version = "1.6.0", features = ["combin"] }
 
 [dev-dependencies]
 env_logger = "0.10.0"

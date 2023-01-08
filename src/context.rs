@@ -159,6 +159,28 @@ impl<'r> Provider<'r> {
 	}
 }
 
+pub trait SpawnSubProvider {
+	fn spawn_child<'c>(&'c self) -> Provider<'c>;
+
+	fn spawn_child_with<'c, T: ProviderEntries<'c>>(&'c self, values: T) -> Provider<'c> {
+		self.spawn_child().with(values)
+	}
+}
+
+impl<'a> SpawnSubProvider for Provider<'a> {
+	fn spawn_child<'c>(&'c self) -> Provider<'c> {
+		// Name resolution prioritizes inherent method of the same name.
+		self.spawn_child()
+	}
+}
+
+impl SpawnSubProvider for Universe {
+	fn spawn_child<'c>(&'c self) -> Provider<'c> {
+		// Name resolution prioritizes inherent method of the same name.
+		Provider::new(self)
+	}
+}
+
 // === Insertion helpers === //
 
 impl<'r> Provider<'r> {
@@ -339,26 +361,21 @@ pub mod macro_internal {
 
 	pub struct ProviderFromDecomposedTuple<T>(pub T);
 
-	macro_rules! impl_provider_entries {
-		($($para:ident:$field:tt),*) => {
-			impl<'a, $($para: 'a + ProviderEntries<'a>),*>
-				ProviderEntries<'a> for
-				ProviderFromDecomposedTuple<($(&'a mut $para,)*)>
-			{
-				#[allow(unused)]
-				fn add_to_provider(self, provider: &mut Provider<'a>) {
-					$(self.0.$field.add_to_provider_ref(&mut *provider);)*
-				}
+	impl<'a, P0: ProviderEntries<'a>, P1: ProviderEntries<'a>> ProviderEntries<'a>
+		for ProviderFromDecomposedTuple<(P0, P1)>
+	{
+		#[allow(unused)]
+		fn add_to_provider(self, provider: &mut Provider<'a>) {
+			self.0 .0.add_to_provider(provider);
+			self.0 .1.add_to_provider(provider);
+		}
 
-				#[allow(unused)]
-				fn add_to_provider_ref(&'a mut self, provider: &mut Provider<'a>) {
-					$(self.0.$field.add_to_provider_ref(&mut *provider);)*
-				}
-			}
-		};
+		#[allow(unused)]
+		fn add_to_provider_ref(&'a mut self, provider: &mut Provider<'a>) {
+			self.0 .0.add_to_provider_ref(provider);
+			self.0 .1.add_to_provider_ref(provider);
+		}
 	}
-
-	impl_tuples!(impl_provider_entries);
 }
 
 #[macro_export]
@@ -398,27 +415,6 @@ macro_rules! unpack {
 				$crate::decompose!(...$out_tup),
 			)
 		};
-	};
-	($out_tup:ident = $src:expr => {
-		$(
-			$name_bound:ident: $(@$anno_bound:ident)? $ty_bound:ty
-		),*
-		$(, $(...:
-			$($(@$anno_unbound:ident)? $ty_unbound:ty),*
-			$(,)?
-		)?)?
-	}) => {
-		$crate::unpack!($out_tup & $out_tup = $src => {
-			$(
-				$name_bound: $(@$anno_bound)? $ty_bound
-			),*
-			$(
-				,
-				$(...:
-					$($(@$anno_unbound)? $ty_unbound),*
-				)?
-			)?
-		});
 	};
 	($out_tup:ident = $src:expr => (
 		$($(@$anno_unbound:ident)? $ty_unbound:ty),*
@@ -493,18 +489,11 @@ macro_rules! unpack {
 #[macro_export]
 macro_rules! provider_from_tuple {
 	($parent:expr, $expr:expr) => {
-		$crate::Provider::new_with_parent_and_comps(
-			$parent,
+		$crate::context::SpawnSubProvider::spawn_child_with(
+			&$parent,
 			$crate::context::macro_internal::ProviderFromDecomposedTuple(
-				$crate::decompose!($expr => (&mut ...))
-			)
-		)
-	};
-	($expr:expr) => {
-		$crate::Provider::new_with(
-			$crate::ecs::context::macro_internal::ProviderFromDecomposedTuple(
-				$crate::decompose!($expr => (&mut ...))
-			)
+				$crate::decompose!(...$expr => ()).1
+			),
 		)
 	};
 }
@@ -514,4 +503,3 @@ pub use {provider_from_tuple, unpack};
 // === Tuple context passing === //
 
 pub use compost::decompose;
-pub use tuples::{CombinConcat, CombinRight};

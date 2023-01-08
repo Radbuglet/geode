@@ -4,8 +4,17 @@
 
 - [ ] Improve dependency injection:
   - [x] Improve combined `unpack!` syntax.
-  - [ ] Implement `compost`-level tuple combination, especially for `rest`.
-  - [ ] Remove component limit now that `rest` tuples can be arbitrarily nested?
+  - [x] Implement `compost`-level tuple combination, especially for `rest`.
+  - [ ] Update `unpack!` to use new `decompose!` macro.
+  - [ ] Clean up `unpack!` macro forms.
+  - [ ] Remove component limit on `unpack!` now that cons-lists have proper support?
+- [ ] Additional `decompose!` features:
+  - [x] Allow users to decompose temporaries
+  - [ ] Create better merging macros and the functionality to make something a cons-list.
+  - [ ] Allow unlimited `Deref` chains
+  - [ ] Allow for opt-in increases to max arity
+  - [ ] Publish these features
+
 - [x] Implement more alias methods in `Universe`.
 - [ ] Expose `WeakArchetypeId` when managed by the universe.
 - [ ] Allow users to register archetype deletion hooks as custom metadata keys. This can be done safely because deletions are only processed on `flush`.
@@ -63,10 +72,8 @@
 
 - There is still a *lot* of context passing. This causes problems where:
   - **We have super-high-arity tuples containing context.** This is problematic because we often reuse the same context tuple among many services. Thus, while we can easily move one tuple to another, we still have to repeat signatures. Additionally, we currently have a limit of 12 elements in these tuples and this limit is not expandable. Finally, it can be hard to think of exactly which components we'll need for a given system, making the process of writing these tuples a bit tedious.
-  - There is concern that these global context passes (see: storages) could enforce u**nnecessary data dependencies** where (automatic?) sharding could make things more efficient.
+  - There is concern that these global context passes (see: storages) could enforce **unnecessary data dependencies** where (automatic?) sharding could make things more efficient.
 - There are quite a few instances of unenforced rules:
   - Late initialization of bundle components being skipped.
   - `Provider` component lists not be appropriate.
-
-
 

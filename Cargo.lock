@@ -43,9 +43,8 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "compost"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73eb1bd52af99e5cf328f491731a140eee4ba992d4336d0cd491c9aa7a59a5b4"
+version = "0.4.0"
+source = "git+https://github.com/Radbuglet/compost.git?rev=0d532ccb26d79e9f043cc22faf66c806a40aeb74#0d532ccb26d79e9f043cc22faf66c806a40aeb74"
 
 [[package]]
 name = "crossbeam-channel"
@@ -168,7 +167,6 @@ dependencies = [
  "hibitset",
  "log",
  "parking_lot",
- "tuples",
 ]
 
 [[package]]
@@ -417,12 +415,6 @@ checksum = "bab24d30b911b2376f3a13cc2cd443142f0c81dda04c118693e35b3835757755"
 dependencies = [
  "winapi-util",
 ]
-
-[[package]]
-name = "tuples"
-version = "1.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "446791a5e330a0dc5939f32eba8704c39b39e6f308740e666e4217bf4f50c3f0"
 
 [[package]]
 name = "unicode-ident"
