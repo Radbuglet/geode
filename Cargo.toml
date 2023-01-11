@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-compost = { git = "https://github.com/Radbuglet/compost.git", rev = "0d532ccb26d79e9f043cc22faf66c806a40aeb74" }
+compost = { git = "https://github.com/Radbuglet/compost.git", rev = "6b029d6b4530b92b2e8b343f07069624da5541d1" }
 derive-where = "1.0.0"
 fastrand = "1.8.0"
 fnv = "1.0.3"

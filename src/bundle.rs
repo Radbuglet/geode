@@ -1,10 +1,5 @@
 use crate::Entity;
 
-#[doc(hidden)]
-pub mod macro_internal {
-	pub use std::option::Option;
-}
-
 pub trait Bundle: Sized {
 	type Context<'a>;
 

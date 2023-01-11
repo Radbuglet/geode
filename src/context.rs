@@ -241,6 +241,11 @@ pub trait UnpackTarget<'guard: 'borrow, 'borrow, P: ?Sized> {
 
 	fn acquire_guard(src: &'guard P) -> Self::Guard;
 	fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference;
+
+	#[doc(hidden)]
+	fn acquire_ref_infer_src(_dummy: &P, guard: &'borrow mut Self::Guard) -> Self::Reference {
+		Self::acquire_ref(guard)
+	}
 }
 
 impl<'provider, 'guard: 'borrow, 'borrow, T: ?Sized + 'static>
@@ -276,213 +281,63 @@ impl<'provider, 'guard: 'borrow, 'borrow, T: ?Sized + 'static>
 // === `unpack!` macro === //
 
 #[doc(hidden)]
-pub mod macro_internal {
-	use super::*;
-
-	// === `unpack!` stuff === //
-
-	pub use std::marker::PhantomData;
-
-	pub trait UnpackTargetTuple<'guard: 'borrow, 'borrow, P: ?Sized, I> {
-		type Output;
-
-		fn acquire_refs(self, _dummy_provider: &P, input: &'borrow mut I) -> Self::Output;
-	}
-
-	macro_rules! impl_guard_tuples_as_refs {
-		($($para:ident:$field:tt),*) => {
-			impl<'guard: 'borrow, 'borrow, P: ?Sized, $($para: UnpackTarget<'guard, 'borrow, P>),*>
-				UnpackTargetTuple<'guard, 'borrow, P, ($($para::Guard,)*)>
-				for ($(PhantomData<$para>,)*)
-			{
-				type Output = ($($para::Reference,)*);
-
-				#[allow(unused)]
-				#[allow(clippy::unused_unit)]
-				fn acquire_refs(self, _dummy_provider: &P, guards: &'borrow mut ($($para::Guard,)*)) -> Self::Output {
-					($($para::acquire_ref(&mut guards.$field),)*)
-				}
-			}
-		};
-	}
-
-	impl_tuples!(impl_guard_tuples_as_refs);
-
-	// TODO: It may look like we could take these two expression macros and combine them into one
-	// type macro, which would be nice, but rust-analyzer doesn't seem to support type macros correctly
-	// so this is the easiest way to preserve IDE completions while implementing this feature.
-	#[doc(hidden)]
-	#[macro_export]
-	macro_rules! unpack_internal_ty_acquire_guard {
-		($src:expr, @arch $ty:ty) => {
-			<$crate::universe::injection::ResArch<$ty> as $crate::context::UnpackTarget<_>>::acquire_guard(
-				$src,
-			)
-		};
-		($src:expr, @res $ty:ty) => {
-			<$crate::universe::injection::Res<&$ty> as $crate::context::UnpackTarget<_>>::acquire_guard($src)
-		};
-		($src:expr, @mut $ty:ty) => {
-			<$crate::universe::injection::ResRw<&mut $ty> as $crate::context::UnpackTarget<_>>::acquire_guard(
-				$src,
-			)
-		};
-		($src:expr, @ref $ty:ty) => {
-			<$crate::universe::injection::ResRw<&$ty> as $crate::context::UnpackTarget<_>>::acquire_guard($src)
-		};
-		($src:expr, $ty:ty) => {
-			<$ty as $crate::context::UnpackTarget<_>>::acquire_guard($src)
-		};
-	}
-
-	#[doc(hidden)]
-	#[macro_export]
-	macro_rules! unpack_internal_ty_phantom_data {
-		(@arch $ty:ty) => {
-			$crate::context::macro_internal::PhantomData::<$crate::universe::injection::ResArch<$ty>>
-		};
-		(@res $ty:ty) => {
-			$crate::context::macro_internal::PhantomData::<$crate::universe::injection::Res<&$ty>>
-		};
-		(@mut $ty:ty) => {
-			$crate::context::macro_internal::PhantomData::<
-				$crate::universe::injection::ResRw<&mut $ty>,
-			>
-		};
-		(@ref $ty:ty) => {
-			$crate::context::macro_internal::PhantomData::<$crate::universe::injection::ResRw<&$ty>>
-		};
-		($ty:ty) => {
-			$crate::context::macro_internal::PhantomData::<$ty>
-		};
-	}
-
-	// === `provider_from_tuple!` macro === //
-
-	pub struct ProviderFromDecomposedTuple<T>(pub T);
-
-	impl<'a, P0: ProviderEntries<'a>, P1: ProviderEntries<'a>> ProviderEntries<'a>
-		for ProviderFromDecomposedTuple<(P0, P1)>
-	{
-		#[allow(unused)]
-		fn add_to_provider(self, provider: &mut Provider<'a>) {
-			self.0 .0.add_to_provider(provider);
-			self.0 .1.add_to_provider(provider);
-		}
-
-		#[allow(unused)]
-		fn add_to_provider_ref(&'a mut self, provider: &mut Provider<'a>) {
-			self.0 .0.add_to_provider_ref(provider);
-			self.0 .1.add_to_provider_ref(provider);
-		}
-	}
+#[macro_export]
+macro_rules! unpack_internal_ty_method {
+	($method:ident, @arch $ty:ty) => {
+		<$crate::universe::injection::ResArch<$ty> as $crate::context::UnpackTarget<_>>::$method
+	};
+	($method:ident, @res $ty:ty) => {
+		<$crate::universe::injection::Res<&$ty> as $crate::context::UnpackTarget<_>>::$method
+	};
+	($method:ident, @mut $ty:ty) => {
+		<$crate::universe::injection::ResRw<&mut $ty> as $crate::context::UnpackTarget<_>>::$method
+	};
+	($method:ident, @ref $ty:ty) => {
+		<$crate::universe::injection::ResRw<&$ty> as $crate::context::UnpackTarget<_>>::$method
+	};
+	($method:ident, $ty:ty) => {
+		<$ty as $crate::context::UnpackTarget<_>>::$method
+	};
 }
 
 #[macro_export]
 macro_rules! unpack {
-	// Guarded struct unpack with context
-	($out_tup:ident & $out_tup_rest:ident = $src:expr => {
-		$(
-			$name_bound:ident: $(@$anno_bound:ident)? $ty_bound:ty
-		),*
-		$(, $(...:
-			$($(@$anno_unbound:ident)? $ty_unbound:ty),*
-			$(,)?
-		)?)?
-	}) => {
-		let src = $src;
-		let mut guard;
-		let mut $out_tup = $crate::unpack!(src => guard & (
-			$($(@$anno_bound)? $ty_bound,)*
-			$($(
-				$($(@$anno_unbound)? $ty_unbound,)*
-			)?)?
-		));
-
-		let (($($name_bound,)*), mut $out_tup_rest) = {
-			#[allow(non_camel_case_types)]
-			fn identity_helper<'guard: 'borrow, 'borrow, P: ?Sized, R, $($name_bound: $crate::context::UnpackTarget<'guard, 'borrow, P>),*>(
-				_dummy_provider: &P,
-				_dummy_targets: ($($crate::context::macro_internal::PhantomData<$name_bound>,)*),
-				v: (($(<$name_bound as $crate::context::UnpackTarget<'guard, 'borrow, P>>::Reference,)*), R),
-			) -> (($(<$name_bound as $crate::context::UnpackTarget<'guard, 'borrow, P>>::Reference,)*), R) {
-				v
-			}
-
-			identity_helper(
-				src,
-				($($crate::unpack_internal_ty_phantom_data!($(@$anno_bound)? $ty_bound),)*),
-				$crate::decompose!(...$out_tup),
-			)
-		};
-	};
-	($out_tup:ident = $src:expr => (
-		$($(@$anno_unbound:ident)? $ty_unbound:ty),*
-		$(,)?
-	)) => {
-		$crate::unpack!($out_tup & _ignore = $src => {
-			,...: $(
-				$(@$anno_unbound)?
-				$ty_unbound
-			),*
-		});
-	};
-
-	// Guarded tuple unpack
-	($src:expr => $guard:ident & (
-		$(
-			$(@$anno:ident)? $ty:ty
-		),*
-		$(,)?
+	// Tuples
+	($target:expr => (
+		$($(@$anno:ident)? $comp:ty),*$(,)?
 	)) => {{
-		// Solidify reference
-		let src = $src;
+		let target = &$target;
 
-		// Acquire guards
-		$guard = ($( $crate::unpack_internal_ty_acquire_guard!(src, $(@$anno)? $ty) ,)*);
-
-		// Acquire references
-		$crate::context::macro_internal::UnpackTargetTuple::acquire_refs(
-			($($crate::unpack_internal_ty_phantom_data!($(@$anno)? $ty),)*),
-			src,
-			&mut $guard,
-		)
+		($(
+			&mut $crate::unpack_internal_ty_method!(acquire_guard, $(@$anno)? $comp)(target),
+		)*)
 	}};
 
-	// Unguarded tuple unpack
-	($src:expr => (
-		$(
-			$(@$anno:ident)? $ty:ty
-		),*
-		$(,)?
-	)) => {{
-		let src = $src;
-		($( $crate::unpack_internal_ty_acquire_guard!(src, $(@$anno)? $ty) ,)*)
-	}};
-
-	// Guarded struct unpack
-	($src:expr => {
-		$(
-			$name:ident: $(@$anno:ident)? $ty:ty
-		),*
-		$(,)?
+	// Statements
+	($target:expr => {
+		$($name:ident: $(@$anno:ident)? $comp:ty),*$(,)?
 	}) => {
-		let mut guard;
-		let ($($name,)*) = $crate::unpack!($src => guard & (
-			$($(@$anno)? $ty),*
-		));
+		let ($($name,)*) = $crate::unpack!($target => ($($(@$anno)? $comp),*));
 	};
 
-	// Unguarded struct unpack
-	($src:expr => {
+	// Combined
+	($target:expr => $full_cx:ident, {
+		$($stmt_name:ident: $(@$stmt_anno:ident)? $stmt_comp:ty),*
 		$(
-			$name:pat = $(@$anno:ident)? $ty:ty
-		),*
-		$(,)?
+			,
+			$( ...$rest_cx:ident: ($($(@$tup_anno:ident)? $tup_comp:ty),*$(,)?) $(,)? )?
+		)?
 	}) => {
-		let ($($name,)*) = $crate::unpack!($src => (
-			$($(@$anno)? $ty),*
-		));
+		let target = &$target;
+		let mut $full_cx = (
+			$(&mut $crate::unpack_internal_ty_method!(acquire_guard, $(@$stmt_anno)? $stmt_comp)(target),)*
+			$($((
+				$(&mut $crate::unpack_internal_ty_method!(acquire_guard, $(@$tup_anno)? $tup_comp)(target),)*
+			))?)?
+		);
+		let ($($stmt_name,)* $($($rest_cx,)?)?) = &mut $full_cx;
+		$($(let mut $rest_cx = $crate::Context::reborrow($rest_cx);)?)?
+		let ($($stmt_name,)*) = ($(&mut **$stmt_name,)*);
 	};
 }
 
@@ -490,10 +345,8 @@ macro_rules! unpack {
 macro_rules! provider_from_tuple {
 	($parent:expr, $expr:expr) => {
 		$crate::context::SpawnSubProvider::spawn_child_with(
-			&$parent,
-			$crate::context::macro_internal::ProviderFromDecomposedTuple(
-				$crate::decompose!(...$expr => ()).1
-			),
+			$parent,
+			$crate::Context::reborrow(&mut $expr),
 		)
 	};
 }
@@ -502,4 +355,4 @@ pub use {provider_from_tuple, unpack};
 
 // === Tuple context passing === //
 
-pub use compost::decompose;
+pub use compost::{decompose, Context};

@@ -2,19 +2,18 @@
 
 ##### Universe
 
-- [ ] Improve dependency injection:
+- [x] Improve dependency injection:
   - [x] Improve combined `unpack!` syntax.
   - [x] Implement `compost`-level tuple combination, especially for `rest`.
-  - [ ] Update `unpack!` to use new `decompose!` macro.
-  - [ ] Clean up `unpack!` macro forms.
-  - [ ] Remove component limit on `unpack!` now that cons-lists have proper support?
-- [ ] Additional `decompose!` features:
+  - [x] Update `unpack!` to use new `decompose!` macro.
+  - [x] Clean up `unpack!` macro forms.
+  - [x] Remove component limit on `unpack!` now that cons-lists have proper support?
+- [x] Additional `decompose!` features:
   - [x] Allow users to decompose temporaries
-  - [ ] Create better merging macros and the functionality to make something a cons-list.
-  - [ ] Allow unlimited `Deref` chains
-  - [ ] Allow for opt-in increases to max arity
-  - [ ] Publish these features
-
+  - [x] Expose the functionality to make something a cons-list without the need for `decompose!(...x => ()).1` jank.
+  - [ ] Allow unlimited `Deref` chains.
+  - [ ] Allow for opt-in increases to max arity.
+  - [ ] Publish these features.
 - [x] Implement more alias methods in `Universe`.
 - [ ] Expose `WeakArchetypeId` when managed by the universe.
 - [ ] Allow users to register archetype deletion hooks as custom metadata keys. This can be done safely because deletions are only processed on `flush`.
@@ -68,6 +67,21 @@
 
 - There was a concern that **task queues could obfuscate side-effects**. However, tasks are already expected to be written in such a way that they are global-order independent (i.e. they should expect other tasks to be queued up before them and should therefore not make state assumptions about the objects they're manipulating), so this really is only a concern for deletion ordering. We can ensure that these cases don't happen by neatly dividing the engine's tasks into phases, ensuring that `dispatch_tasks` happens before a deletion dispatch and `flush` happens after.
 
+- One concern is the **ease of use of the library**. Is it really just as easy to write it in `geode` as it would be to write it in `kotae-core`? Specifically, how many steps does it take to add something?
+
+  `geode`'s and `kotae-core`'s designs are effectively isomorphic. The power of `goede` comes from the way in which we can further optimize this base OOP design and turn it into a veritable data-oriented implementation. This is done with a few features:
+
+  1. Explicit event queues (users decide where these come from and when they get executed)
+  2. Explicit archetype creation (users decide the logical owner of an archetype; users have to create their own component bundles manually)
+  3. Explicit system configuration (users decide when queries are launched and the tags needed to do so)
+
+  These are the main sources of any additional complexity a `geode` user may face. Thus, the question becomes: How easy is it to define a new event queue? How easy is it to define a new archetype? How easy is it to link all of these things together?
+
+  In my opinion, this is not a concern of `geode`. Archetypes and tags are certainly not new to OOP designs (they are often used in about the same place that an entity list might be used) and, in OOP designs, it is the responsibility of the engine designer—not the object-model designer—to implement contextually-appropriate mechanisms for configuring all of this. Indeed, there is no global solution to these mechanisms (although traditional ECS' have proposed unified task schedulers—an abstraction worth potentially adding to `geode`) so being too overbearing about the precise implementation of this mechanism would be detrimental to our library.
+
+  The main discomfort with this rebuttal stems from the fear that definition work will need to be duplicated in multiple places, making system isolation difficult and potentially dangerous (e.g. an entity archetype is created and used but is never registered in the appropriate registry). This scenario can be prevented by ensuring that archetypes are created alongside their entry in the registry (e.g. the archetype constructor takes a reference to the registry) which, again, is not an uncommon pattern for descriptor objects in OOP.
+
+
 ##### Active
 
 - There is still a *lot* of context passing. This causes problems where:
@@ -76,4 +90,5 @@
 - There are quite a few instances of unenforced rules:
   - Late initialization of bundle components being skipped.
   - `Provider` component lists not be appropriate.
+  - Entity and archetype types. It isn't always clear which dispatch/deletion mechanism should be used and migrating between mechanisms can be quite difficult.
 
