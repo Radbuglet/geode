@@ -561,16 +561,18 @@ pub mod injection {
 	impl<'guard: 'borrow, 'borrow, T: ?Sized + BuildableArchetypeBundle>
 		UnpackTarget<'guard, 'borrow, Universe> for ResArch<T>
 	{
-		type Guard = MutexGuard<'guard, Archetype>;
+		type Guard = MappedMutexGuard<'guard, Archetype<T>>;
 		type Reference = &'borrow mut Archetype<T>;
 
 		fn acquire_guard(src: &'guard Universe) -> Self::Guard {
 			let id = src.archetype_resource_id::<T>();
-			src.archetype_by_id(id).try_lock().unwrap()
+			MutexGuard::map(src.archetype_by_id(id).try_lock().unwrap(), |arch| {
+				arch.cast_marker_mut()
+			})
 		}
 
 		fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference {
-			guard.cast_marker_mut()
+			guard
 		}
 	}
 

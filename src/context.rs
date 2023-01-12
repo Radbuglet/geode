@@ -306,7 +306,7 @@ macro_rules! unpack {
 	($target:expr => (
 		$($(@$anno:ident)? $comp:ty),*$(,)?
 	)) => {{
-		let target = &$target;
+		let target = $target;
 
 		($(
 			&mut $crate::unpack_internal_ty_method!(acquire_guard, $(@$anno)? $comp)(target),
@@ -328,7 +328,7 @@ macro_rules! unpack {
 			$( ...$rest_cx:ident: ($($(@$tup_anno:ident)? $tup_comp:ty),*$(,)?) $(,)? )?
 		)?
 	}) => {
-		let target = &$target;
+		let target = $target;
 		let mut $full_cx = (
 			$(&mut $crate::unpack_internal_ty_method!(acquire_guard, $(@$stmt_anno)? $stmt_comp)(target),)*
 			$($((

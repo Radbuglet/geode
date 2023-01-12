@@ -350,9 +350,16 @@ impl PartialOrd for DebugLifetime {
 
 pub trait LifetimeLike: Copy {
 	fn is_possibly_alive(self) -> bool;
+
 	fn is_condemned(self) -> bool;
+
 	fn inc_dep(self);
+
 	fn dec_dep(self);
+
+	fn as_dependent(self) -> Dependent<Self> {
+		self.into()
+	}
 }
 
 pub trait DestructibleLifetime: LifetimeLike {

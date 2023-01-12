@@ -26,6 +26,12 @@ pub struct ArchetypeId {
 	pub id: NonZeroU32,
 }
 
+impl ArchetypeId {
+	pub fn as_dependent(self) -> Dependent<Self> {
+		LifetimeLike::as_dependent(self)
+	}
+}
+
 impl LifetimeLike for ArchetypeId {
 	fn is_possibly_alive(self) -> bool {
 		self.lifetime.is_possibly_alive()
@@ -52,6 +58,10 @@ pub struct Entity {
 }
 
 impl Entity {
+	pub fn as_dependent(self) -> Dependent<Self> {
+		LifetimeLike::as_dependent(self)
+	}
+
 	pub fn slot_usize(&self) -> usize {
 		self.slot as usize
 	}
