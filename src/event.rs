@@ -250,7 +250,7 @@ impl<E: 'static> EventHandler<E> {
 	{
 		let handler = self.clone();
 		universe.queue_task(name, move |universe| {
-			handler.process_universe(&universe, event);
+			handler.process_universe(universe, event);
 		});
 	}
 }

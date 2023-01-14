@@ -62,12 +62,12 @@ impl<'r> Provider<'r> {
 		Self::new_with_parent(parent).with(entries)
 	}
 
-	pub fn spawn_child<'c>(&'c self) -> Provider<'c> {
+	pub fn sub_provider<'c>(&'c self) -> Provider<'c> {
 		Provider::new_with_parent(self)
 	}
 
-	pub fn spawn_child_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c> {
-		Provider::new_with_parent(self).with(entries)
+	pub fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c> {
+		self.sub_provider().with(entries)
 	}
 
 	pub fn parent(&self) -> Option<&'r Provider<'r>> {
@@ -160,24 +160,32 @@ impl<'r> Provider<'r> {
 }
 
 pub trait SpawnSubProvider {
-	fn spawn_child<'c>(&'c self) -> Provider<'c>;
+	fn sub_provider<'c>(&'c self) -> Provider<'c>;
 
-	fn spawn_child_with<'c, T: ProviderEntries<'c>>(&'c self, values: T) -> Provider<'c> {
-		self.spawn_child().with(values)
-	}
+	fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c>;
 }
 
 impl<'a> SpawnSubProvider for Provider<'a> {
-	fn spawn_child<'c>(&'c self) -> Provider<'c> {
+	fn sub_provider<'c>(&'c self) -> Provider<'c> {
 		// Name resolution prioritizes inherent method of the same name.
-		self.spawn_child()
+		self.sub_provider()
+	}
+
+	fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c> {
+		// Name resolution prioritizes inherent method of the same name.
+		self.sub_provider_with(entries)
 	}
 }
 
 impl SpawnSubProvider for Universe {
-	fn spawn_child<'c>(&'c self) -> Provider<'c> {
+	fn sub_provider<'c>(&'c self) -> Provider<'c> {
 		// Name resolution prioritizes inherent method of the same name.
 		Provider::new(self)
+	}
+
+	fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c> {
+		// Name resolution prioritizes inherent method of the same name.
+		self.sub_provider_with(entries)
 	}
 }
 
@@ -321,7 +329,7 @@ macro_rules! unpack {
 	};
 
 	// Combined
-	($target:expr => $full_cx:ident, {
+	($target:expr => $full_cx:ident: {
 		$($stmt_name:ident: $(@$stmt_anno:ident)? $stmt_comp:ty),*
 		$(
 			,
@@ -344,7 +352,7 @@ macro_rules! unpack {
 #[macro_export]
 macro_rules! provider_from_tuple {
 	($parent:expr, $expr:expr) => {
-		$crate::context::SpawnSubProvider::spawn_child_with(
+		$crate::context::SpawnSubProvider::sub_provider_with(
 			$parent,
 			$crate::Context::reborrow(&mut $expr),
 		)

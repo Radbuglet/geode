@@ -15,7 +15,7 @@
   - [ ] Allow for opt-in increases to max arity.
   - [ ] Publish these features.
 - [x] Implement more alias methods in `Universe`.
-- [ ] Expose `WeakArchetypeId` when managed by the universe.
+- [ ] Expose `WeakEntity` and `WeakArchetype`.
 - [ ] Allow users to register archetype deletion hooks as custom metadata keys. This can be done safely because deletions are only processed on `flush`.
 - [ ] Allow `EventQueueIter` to be reiterated and polled on individual archetypes.
 - [ ] Optimize tag querying, add `TagId`-namespaced archetype metadata.
@@ -24,6 +24,12 @@
 
 - [ ] Add support for late-initialized `bundle!` components.
 - [ ] Allow more direct manipulation of `Storage` (specifically, expose runs and allow users to get an `UnsafeCell<T>` version of the storage given a mutable reference to it).
+- [ ] Expose `Archetype::spawn_push`, `Archetype::spawn_in_slot`, and `Archetype::iter`.
+- [ ] Improve task executors:
+  - [x] Flush universe between tasks.
+  - [ ] Remove special case for `Universe` in `Provider` by adding a `get_immutable` method.
+  - [ ] Allow users to provide an input context to the task execution pass.
+  - [ ] Implement a scratch space and give tasks access to it.
 - [ ] Implement more storage types:
   - [ ] Single-threaded ref-celling for multi-borrow
   - [ ] Sharding at the archetype level
@@ -61,7 +67,7 @@
     - Metadata can be used to acquire additional behavior descriptors for entity type without faffing around with `ArchetypeMaps`, which would pose the exact same verbosity problem as the removed-tags proposal.
 
   - This type of special casing may feel a bit weird—we force `Entities` to handle deletion manually—but we need this special casing to allow for lazy `BuildableResource` creation, which requires tightly-knit `Universe::flush()` integration. All the extra convenience is just a way to keep the interface consistent.
-  - Additionally, once the metadata destructor task proposal goes through, tags could be implemented entirely in userland.
+  - Additionally, once the archetypal metadata destructor task proposal goes through, tags could be implemented entirely in userland.
 -  There was an argument to replace the entire context passing mechanism with **a regular ECS scheduler, maybe with nesting**. The arguments for this were: we can reduce the size of context tuples and we could implement sharding more easily. This isn't so much an argument for reduction, however, as it is an argument more for bite-sized systems and inline `Storages `than against any existing design features. We can easily support this extension using our proposed multithreading model—there's no need to tear everything down.
   - It's also not a good counterargument to imply that direct execution is an anti-pattern. Direct execution is a relatively-heavyweight mechanism for shaping macro-level execution as one desires, which is necessary for a lot of game features which cannot be directly bootstrapped by a traditional ECS (e.g. user plugin loading and unloading, which requires its own scheduling mechanism). Indeed, enabling this type of execution for the sake of Crucible is the *raison-d'être* of Geode.
 

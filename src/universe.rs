@@ -17,6 +17,7 @@ use fnv::FnvBuildHasher;
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::{
+	context::ProviderEntries,
 	debug::{
 		label::{DebugLabel, ReifiedDebugLabel},
 		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
@@ -24,7 +25,7 @@ use crate::{
 	entity::hashers::ArchetypeBuildHasher,
 	event::TaskQueue,
 	util::{eventual_map::EventualMap, ptr::PointeeCastExt, type_map::TypeMap},
-	Archetype, ArchetypeId, EventHandler, EventQueue, EventQueueIter, Storage,
+	Archetype, ArchetypeId, EventHandler, EventQueue, EventQueueIter, Provider, Storage,
 };
 
 // === Universe === //
@@ -248,6 +249,14 @@ impl Universe {
 
 	// === Management === //
 
+	pub fn sub_provider(&self) -> Provider<'_> {
+		Provider::new(self)
+	}
+
+	pub fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, values: T) -> Provider<'c> {
+		self.sub_provider().with(values)
+	}
+
 	pub fn dispatch_tasks(&mut self) {
 		while let Some(mut task) = self.task_queue.get_mut().next_task() {
 			log::trace!("Executing universe task {:?}", task.name);
@@ -257,7 +266,7 @@ impl Universe {
 		self.task_queue.get_mut().clear_capacities();
 	}
 
-	pub fn flush(&mut self) {
+	pub fn flush_nurseries(&mut self) {
 		// Flush all `EventualMaps`
 		self.archetypes.flush();
 		self.tags.flush();
@@ -266,6 +275,11 @@ impl Universe {
 		for archetype in mem::take(self.dirty_archetypes.get_mut()) {
 			self.archetypes[&archetype].meta.flush();
 		}
+	}
+
+	pub fn flush(&mut self) {
+		// Flush nurseries. This is done here to ensure that the `dirty_archetypes` list is empty.
+		self.flush_nurseries();
 
 		// Flush archetype deletions
 		for arch in mem::take(&mut *self.destruction_list.archetypes.lock()) {
