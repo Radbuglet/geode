@@ -19,10 +19,12 @@
   - [x] Flush universe between tasks.
   - [x] Remove special case for `Universe` in `Provider` by adding a `get_frozen` method.
   - [x] Allow users to provide an input context to the task execution pass.
-  - [ ] Implement a scratch space and give tasks access to it.
   - [ ] Make sure that `Providers` "thaw" the components of their ancestors that they froze to avoid unexpected freezing.
+  - [ ] Implement a scratch space and give tasks access to it.
 - [ ] Allow users to register archetype deletion hooks as custom metadata keys. This can be done safely because deletions are only processed on `flush`.
+- [ ] Implement `Universe`-global `EventQueues`.
 - [ ] Optimize tag querying, add `TagId`-namespaced archetype metadata.
+- [ ] Add support for non-auto-initializable `Universe` resources.
 
 ##### Entity Model
 
@@ -62,44 +64,56 @@
 
 ## Design Concerns
 
-##### Obviated
+This design is similar enough to more traditional object-oriented `GameObject` implementations that most design concerns end up being resolved by just copying those solutions. Thus, to begin thinking about design concerns, it is most useful to begin by listing where our design deviates from the object-oriented `GameObject` design:
 
-- There were concerns about **single component objects** and a desire to make them their own entity type. While we might see some value in defining `SingletonBundle`, the machinery required to optimize for this special case is too much, especially considering that this choice would limit your ability to do other things later. Honestly, this is more a context verbosity problem than an architecture problem.
-- There were some concerns about the implementation of signals. Specifically, **where do we attach the handle state**? To the target handler? In its own entity? This is actually the same exact issue we saw with `kotae-core` and, like in that issue, we decided that it is best to handle these at a case-by-case basis while building abstractions that could support both.
-- There was an argument to **remove archetype metadata and tags**. However,
-  - These things serve important purposes that need to be as easy as possible:
-    - Tags are exceedingly useful for making this design traditional-ECS-compliant. We can create root-level systems that iterate over groups of archetypes incredibly easily. Just think of all the things we'd have to manually remove otherwise.
-    - Metadata can be used to acquire additional behavior descriptors for entity type without faffing around with `ArchetypeMaps`, which would pose the exact same verbosity problem as the removed-tags proposal.
+1. Users have to manually manage data access (archetypes and storages).
+   1. They have to decide how to pass this data to the appropriate system at the appropriate time.
+   2. They have to decide how to structure their data.
+2. Users have to deal with more complex dispatch mechanisms such as `EventQueues` and archetype querying.
 
-  - This type of special casing may feel a bit weird—we force `Entities` to handle deletion manually—but we need this special casing to allow for lazy `BuildableResource` creation, which requires tightly-knit `Universe::flush()` integration. All the extra convenience is just a way to keep the interface consistent.
-  - Additionally, once the archetypal metadata destructor task proposal goes through, tags could be implemented entirely in userland.
--  There was an argument to replace the entire context passing mechanism with **a regular ECS scheduler, maybe with nesting**. The arguments for this were: we can reduce the size of context tuples and we could implement sharding more easily. This isn't so much an argument for reduction, however, as it is an argument more for bite-sized systems and inline `Storages `than against any existing design features. We can easily support this extension using our proposed multithreading model—there's no need to tear everything down.
-  - It's also not a good counterargument to imply that direct execution is an anti-pattern. Direct execution is a relatively-heavyweight mechanism for shaping macro-level execution as one desires, which is necessary for a lot of game features which cannot be directly bootstrapped by a traditional ECS (e.g. user plugin loading and unloading, which requires its own scheduling mechanism). Indeed, enabling this type of execution for the sake of Crucible is the *raison-d'être* of Geode.
+##### Context Passing
 
-- There was a concern that **task queues could obfuscate side-effects**. However, tasks are already expected to be written in such a way that they are global-order independent (i.e. they should expect other tasks to be queued up before them and should therefore not make state assumptions about the objects they're manipulating), so this really is only a concern for deletion ordering. We can ensure that these cases don't happen by neatly dividing the engine's tasks into phases, ensuring that `dispatch_tasks` happens before a deletion dispatch and `flush` happens after.
+We'll begin by considering the problem of state passing. This problem is precisely the problem a more-restrictive traditional ECS tries to solve with the notion of a "system." While restricting users to a strict ECS-style scheduler feels like an attractive solution to ensure that our library is well designed (we would immediately benefit from the corpus of knowledge on traditional ECS'), this decision would likely reduce the overall utility of this library. Indeed, the *raison d'être* of Geode is to provide flexibility in the way that they execute systems to projects like Crucible—which expose their own form of plugin dispatch which cannot be easily modeled by a flat executor.
 
-- One concern is the **ease of use of the library**. Is it really just as easy to write it in `geode` as it would be to write it in `kotae-core`? Specifically, how many steps does it take to add something?
+Essentially, we need a pattern where *nested dispatch* is encouraged. In other words, we need an ECS-style model where systems are encouraged rather than discouraged from calling into other nested subsystems. At the same time, we want to bring over the following useful properties provided by an ECS' scheduler:
 
-  `geode`'s and `kotae-core`'s designs are effectively isomorphic. The power of `goede` comes from the way in which we can further optimize this base OOP design and turn it into a veritable data-oriented implementation. This is done with a few features:
+1. It should be easy to change the origin of a given piece of state. For example, it should be possible to combine or split the same of several components and update the systems depending on those components without getting stopped by borrow violations.
+2. If the user wants to forfeit the above property for the sake of performance/predictability, they should be notified, at compile time, whether a borrow violation exists.
 
-  1. Explicit event queues (users decide where these come from and when they get executed)
-  2. Explicit archetype creation (users decide the logical owner of an archetype; users have to create their own component bundles manually)
-  3. Explicit system configuration (users decide when queries are launched and the tags needed to do so)
+There are four types of dispatches supported by the current design:
 
-  These are the main sources of any additional complexity a `geode` user may face. Thus, the question becomes: How easy is it to define a new event queue? How easy is it to define a new archetype? How easy is it to link all of these things together?
+1. **Universe Tasks:** These allow a handler to knowingly acquire the *entire* application context and receive the very strong guarantee that it is the only handler doing so at a given time.
+2. **Async Providers and Thread Pools:** These implement the ECS-style exclusive access mechanisms we're all very used to. They provide similar borrow validity guarantees to universe tasks but are less picky about when they are executed.
+3. **Context Tuples:** These allow users to immediately call a function with a compile-time-known set of components without any queueing. Context passing in these dispatches is resolved statically.
+4. **Providers:** These allow users to immediately call a function with a type-erased set of components without any queueing.
 
-  In my opinion, this is not a concern of `geode`. Archetypes and tags are certainly not new to OOP designs (they are often used in about the same place that an entity list might be used) and, in OOP designs, it is the responsibility of the engine designer—not the object-model designer—to implement contextually-appropriate mechanisms for configuring all of this. Indeed, there is no global solution to these mechanisms (although traditional ECS' have proposed unified task schedulers—an abstraction worth potentially adding to `geode`) so being too overbearing about the precise implementation of this mechanism would be detrimental to our library.
+Universe tasks and async providers perfectly satisfy the first property. Context tuples perfectly satisfy the second property. Providers, meanwhile, satisfy neither property and are extremely dangerous because of it. Fortunately, direct provider dispatches are very rare and can often be replaced by an `EventQueue` dispatch—which would likely be more efficient for most userland uses anyways.
 
-  The main discomfort with this rebuttal stems from the fear that definition work will need to be duplicated in multiple places, making system isolation difficult and potentially dangerous (e.g. an entity archetype is created and used but is never registered in the appropriate registry). This scenario can be prevented by ensuring that archetypes are created alongside their entry in the registry (e.g. the archetype constructor takes a reference to the registry) which, again, is not an uncommon pattern for descriptor objects in OOP.
+##### State Structuring
 
+State structuring involves a number of additional responsibilities with varying degrees of foreignness to the regular object-oriented pattern.
 
-##### Active
+Most familiar will be the creation of archetypes and tags. Archetypes map fairly neatly onto the object-oriented idea of homogenous sets of identically typed entities. This is also the place where Geode improves the most on the flexibility afforded by an traditional ECS. Therefore, I am not too worried about the utility of these.
 
-- There is still a *lot* of context passing. This causes problems where:
-  - **We have super-high-arity tuples containing context.** This is problematic because we often reuse the same context tuple among many services. Thus, while we can easily move one tuple to another, we still have to repeat signatures. Additionally, we currently have a limit of 12 elements in these tuples and this limit is not expandable. Finally, it can be hard to think of exactly which components we'll need for a given system, making the process of writing these tuples a bit tedious.
-  - There is concern that these global context passes (see: storages) could enforce **unnecessary data dependencies** where (automatic?) sharding could make things more efficient.
-- There are quite a few instances of unenforced rules:
-  - Late initialization of bundle components being skipped.
-  - `Provider` component lists not be appropriate.
-  - Entity and archetype types. It isn't always clear which dispatch/deletion mechanism should be used and migrating between mechanisms can be quite difficult.
+What concerns me more, however, is storage structuring. Having multiple storage instances dedicated to a single type—especially if those storages exist in the `Universe` as well—could easily cause confusion as to which instance stores which entity.
+
+Luckily, creating multiple `Storages` is not the only way to achieve sharding. Indeed, given that entities are already organized by their archetype within a storage, it is not too difficult to implement archetype-level sharding. The benefits of this are immense:
+
+1. All storages are managed by the `Universe`, allowing sharding-unaware routines to access the state directly.
+2. Users get very explicit errors when they attempt to access an entity outside of the current shard.
+3. Archetypes are already quite easy to reason about for the reasons stated above.
+4. Archetypes are first-class citizens in Geode so the flexibility they afford will likely translate over to sharded environments as well.
+
+We therefore consider unmanaged `Storages` to be an anti-pattern; there almost never is a good reason to use them.
+
+##### Dispatch Mechanisms
+
+There are a few questions that need to be answered in order to use `EventQueues` effectively:
+
+1. How do we get the `EventQueue` to the handler?
+2. How do we decide when an `EventQueue` should be dispatched?
+
+The first question could get a bit tricky if multiple layers of execution decide to provide their own version of the same `EventQueue`. Therefore, I find it quite beneficial to store every `EventQueue` in the `Universe` and provide `Universe::push_to_queue<T>(EventQueue<T>)` and `Universe::take_queue<T>() -> EventQueueIter<T>` methods to access it.
+
+TODO: Think about these problems a bit more.
 

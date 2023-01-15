@@ -268,23 +268,29 @@ where
 	}
 }
 
-#[derive(Clone)]
-struct EventHandlerUniverseAdapter<F>(F);
+// === UniverseEventHandler === //
 
-impl<E, F> EventHandlerTrait<E> for EventHandlerUniverseAdapter<F>
-where
-	E: 'static,
-	F: 'static + Fn(&Universe, E) + Send + Sync + Clone,
-{
-	fn cloned(&self) -> Box<dyn EventHandlerTrait<E>> {
-		Box::new(self.clone())
+#[derive_where(Debug, Clone; E: 'static)]
+#[repr(transparent)]
+pub struct UniverseEventHandler<E> {
+	pub raw: EventHandler<E>,
+}
+
+impl<E: 'static> UniverseEventHandler<E> {
+	pub fn new<F>(f: F) -> Self
+	where
+		F: 'static + Fn(&Provider, E) + Send + Sync + Clone,
+	{
+		Self {
+			raw: EventHandler::new(f),
+		}
 	}
 
-	fn process(&self, cx: &Provider, event: E) {
-		self.0(cx.get_frozen(), event)
-	}
-
-	fn type_id(&self) -> NamedTypeId {
-		NamedTypeId::of::<F>()
+	pub fn process_as_task<L>(&self, universe: &Universe, name: L, event: E)
+	where
+		L: DebugLabel,
+		E: Send + Sync,
+	{
+		self.raw.process_as_task(universe, name, event)
 	}
 }

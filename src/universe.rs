@@ -23,9 +23,9 @@ use crate::{
 		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
 	},
 	entity::hashers::ArchetypeBuildHasher,
-	event::TaskQueue,
+	event::{TaskQueue, UniverseEventHandler},
 	util::{eventual_map::EventualMap, ptr::PointeeCastExt, type_map::TypeMap},
-	Archetype, ArchetypeId, EventHandler, EventQueue, EventQueueIter, Provider, Storage,
+	Archetype, ArchetypeId, EventQueue, EventQueueIter, Provider, Storage,
 };
 
 // === Universe === //
@@ -135,7 +135,7 @@ impl Universe {
 	{
 		self.add_archetype_meta::<ArchetypeEventQueueHandler<E>>(
 			id,
-			ArchetypeEventQueueHandler(EventHandler::new(handler)),
+			ArchetypeEventQueueHandler(UniverseEventHandler::new(handler)),
 		);
 	}
 
@@ -243,7 +243,7 @@ impl Universe {
 				for iter in events.flush_all() {
 					let arch = iter.arch();
 					let handler = universe.archetype_meta::<ArchetypeEventQueueHandler<E>>(arch);
-					handler.0.process(cx, iter);
+					handler.0.raw.process(cx, iter);
 				}
 			},
 		);
@@ -470,7 +470,7 @@ impl LifetimeLike for TagId {
 // === Universe helpers === //
 
 #[derive_where(Debug, Clone)]
-pub struct ArchetypeEventQueueHandler<E: 'static>(pub EventHandler<EventQueueIter<E>>);
+pub struct ArchetypeEventQueueHandler<E: 'static>(pub UniverseEventHandler<EventQueueIter<E>>);
 
 #[derive_where(Debug)]
 pub struct ArchetypeHandleResource<T: ?Sized>(pub ArchetypeHandle<T>);
