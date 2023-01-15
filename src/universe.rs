@@ -131,11 +131,11 @@ impl Universe {
 	where
 		E: 'static,
 		F: 'static + Send + Sync,
-		F: Fn(&Self, EventQueueIter<E>) + Clone,
+		F: Fn(&Provider, EventQueueIter<E>) + Clone,
 	{
 		self.add_archetype_meta::<ArchetypeEventQueueHandler<E>>(
 			id,
-			ArchetypeEventQueueHandler(EventHandler::new_universe(handler)),
+			ArchetypeEventQueueHandler(EventHandler::new(handler)),
 		);
 	}
 
@@ -362,7 +362,7 @@ impl<M: ?Sized> ArchetypeHandle<M> {
 	where
 		E: 'static,
 		F: 'static + Send + Sync,
-		F: Fn(&Universe, EventQueueIter<E>) + Clone,
+		F: Fn(&Provider, EventQueueIter<E>) + Clone,
 	{
 		universe.add_archetype_queue_handler(self.id(), handler);
 	}

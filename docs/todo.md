@@ -20,6 +20,7 @@
   - [x] Remove special case for `Universe` in `Provider` by adding a `get_frozen` method.
   - [x] Allow users to provide an input context to the task execution pass.
   - [ ] Implement a scratch space and give tasks access to it.
+  - [ ] Make sure that `Providers` "thaw" the components of their ancestors that they froze to avoid unexpected freezing.
 - [ ] Allow users to register archetype deletion hooks as custom metadata keys. This can be done safely because deletions are only processed on `flush`.
 - [ ] Optimize tag querying, add `TagId`-namespaced archetype metadata.
 
@@ -43,8 +44,6 @@
   - [ ] Implement `AsyncProvider`
   - [ ] Implement an `async` version of `unpack!`
   - [ ] Implement pool-based future executor
-  
-
 
 ##### Debug
 

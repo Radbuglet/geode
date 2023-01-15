@@ -228,22 +228,11 @@ impl<E: 'static> EventHandler<E> {
 		Self(Box::new(f))
 	}
 
-	pub fn new_universe<F>(f: F) -> Self
-	where
-		F: 'static + Fn(&Universe, E) + Send + Sync + Clone,
-	{
-		Self(Box::new(EventHandlerUniverseAdapter(f)))
-	}
-
 	pub fn process(&self, cx: &Provider, event: E) {
 		self.0.process(cx, event);
 	}
 
-	pub fn process_universe(&self, cx: &Universe, event: E) {
-		self.process(&Provider::new_with(cx), event)
-	}
-
-	pub fn queue_process<L>(&self, universe: &Universe, name: L, event: E)
+	pub fn process_as_task<L>(&self, universe: &Universe, name: L, event: E)
 	where
 		L: DebugLabel,
 		E: Send + Sync,
