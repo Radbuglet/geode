@@ -240,7 +240,7 @@ impl<E: 'static> EventHandler<E> {
 	}
 
 	pub fn process_universe(&self, cx: &Universe, event: E) {
-		self.process(&Provider::new(cx), event)
+		self.process(&Provider::new_with(cx), event)
 	}
 
 	pub fn queue_process<L>(&self, universe: &Universe, name: L, event: E)
@@ -292,7 +292,7 @@ where
 	}
 
 	fn process(&self, cx: &Provider, event: E) {
-		self.0(cx.universe(), event)
+		self.0(cx.get_frozen(), event)
 	}
 
 	fn type_id(&self) -> NamedTypeId {

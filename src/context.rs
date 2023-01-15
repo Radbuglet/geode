@@ -1,6 +1,6 @@
 use std::{
 	any,
-	cell::{Ref, RefCell, RefMut},
+	cell::{Cell, Ref, RefCell, RefMut},
 	collections::HashMap,
 	fmt,
 	marker::PhantomData,
@@ -9,18 +9,47 @@ use std::{
 
 use fnv::FnvBuildHasher;
 
-use crate::{
-	util::{inline::MaybeBoxedCopy, macros::impl_tuples, type_id::NamedTypeId},
-	Universe,
-};
+use crate::util::{inline::MaybeBoxedCopy, macros::impl_tuples, type_id::NamedTypeId};
 
 // === Core === //
 
 pub struct Provider<'r> {
 	_ty: PhantomData<&'r dyn any::Any>,
-	universe: &'r Universe,
 	parent: Option<&'r Provider<'r>>,
-	values: HashMap<NamedTypeId, (MaybeBoxedCopy<(usize, usize)>, RefCell<()>), FnvBuildHasher>,
+	values: HashMap<NamedTypeId, ProviderEntry, FnvBuildHasher>,
+}
+
+struct ProviderEntry {
+	ptr: MaybeBoxedCopy<(usize, usize)>,
+	sentinel: RefCell<()>,
+	readonly: Cell<bool>,
+}
+
+impl ProviderEntry {
+	fn new_mut<T: ?Sized>(ptr: *mut T) -> Self {
+		ProviderEntry {
+			ptr: MaybeBoxedCopy::new(ptr),
+			sentinel: RefCell::new(()),
+			readonly: Cell::new(false),
+		}
+	}
+
+	fn new_ref<T: ?Sized>(ptr: *const T) -> Self {
+		let entry = ProviderEntry {
+			ptr: MaybeBoxedCopy::new(ptr),
+			sentinel: RefCell::new(()),
+			readonly: Cell::new(false),
+		};
+		entry.make_readonly();
+		entry
+	}
+
+	fn make_readonly(&self) {
+		debug_assert!(!self.readonly.get());
+
+		mem::forget(self.sentinel.borrow());
+		self.readonly.set(true);
+	}
 }
 
 impl<'r> fmt::Debug for Provider<'r> {
@@ -32,81 +61,63 @@ impl<'r> fmt::Debug for Provider<'r> {
 	}
 }
 
+impl Default for Provider<'_> {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl<'r> Provider<'r> {
-	pub fn new(universe: &'r Universe) -> Self {
+	pub fn new() -> Self {
 		Self {
 			_ty: PhantomData,
-			universe,
 			parent: None,
 			values: HashMap::default(),
 		}
 	}
 
-	pub fn new_with<T: ProviderEntries<'r>>(universe: &'r Universe, entries: T) -> Self {
-		Self::new(universe).with(entries)
+	pub fn new_with<T: ProviderEntries<'r>>(entries: T) -> Self {
+		Self::new().with(entries)
 	}
 
-	pub fn new_with_parent(parent: &'r Provider<'r>) -> Self {
+	pub fn new_inherit(parent: Option<&'r Provider<'r>>) -> Self {
 		Self {
 			_ty: PhantomData,
-			universe: parent.universe,
-			parent: Some(parent),
+			parent,
 			values: HashMap::default(),
 		}
 	}
 
-	pub fn new_with_parent_and_comps<T: ProviderEntries<'r>>(
-		parent: &'r Provider<'r>,
+	pub fn new_inherit_with<T: ProviderEntries<'r>>(
+		parent: Option<&'r Provider<'r>>,
 		entries: T,
 	) -> Self {
-		Self::new_with_parent(parent).with(entries)
+		Self::new_inherit(parent).with(entries)
 	}
 
-	pub fn sub_provider<'c>(&'c self) -> Provider<'c> {
-		Provider::new_with_parent(self)
+	pub fn sub_provider<'c: 'r>(&'c self) -> Provider<'c> {
+		Self::new_inherit(Some(self))
 	}
 
-	pub fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c> {
-		self.sub_provider().with(entries)
+	pub fn sub_provider_with<'c: 'r, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c> {
+		Self::new_inherit_with(Some(self), entries)
 	}
 
 	pub fn parent(&self) -> Option<&'r Provider<'r>> {
 		self.parent
 	}
 
-	pub fn universe(&self) -> &Universe {
-		self.universe
-	}
-
 	pub fn add_ref<T: ?Sized + 'static>(&mut self, value: &'r T) {
-		let sentinel = RefCell::new(());
-		mem::forget(sentinel.borrow());
-
-		self.values.insert(
-			NamedTypeId::of::<T>(),
-			(MaybeBoxedCopy::new(value as *const T), sentinel),
-		);
+		self.values
+			.insert(NamedTypeId::of::<T>(), ProviderEntry::new_ref(value));
 	}
 
 	pub fn add_mut<T: ?Sized + 'static>(&mut self, value: &'r mut T) {
-		self.values.insert(
-			NamedTypeId::of::<T>(),
-			(MaybeBoxedCopy::new(value as *const T), RefCell::new(())),
-		);
+		self.values
+			.insert(NamedTypeId::of::<T>(), ProviderEntry::new_mut(value));
 	}
 
-	fn try_get_entry<T: ?Sized + 'static>(
-		&self,
-	) -> Option<&(MaybeBoxedCopy<(usize, usize)>, RefCell<()>)> {
-		if NamedTypeId::of::<T>() == NamedTypeId::of::<Universe>() {
-			log::warn!(
-				"Attempting to fetch a `Universe` component from a `Provider`. \
-			     This is likely an error because `universes` are passed as a field in the `Provider` \
-				 and are accessible through `Provider::universe()` and are therefore almost never passed \
-				 as a component."
-			);
-		}
-
+	fn try_get_entry<T: ?Sized + 'static>(&self) -> Option<&ProviderEntry> {
 		let mut iter = Some(self);
 
 		while let Some(curr) = iter {
@@ -120,11 +131,14 @@ impl<'r> Provider<'r> {
 	}
 
 	pub fn try_get<T: ?Sized + 'static>(&self) -> Option<Ref<T>> {
-		self.try_get_entry::<T>().map(|(ptr, sentinel)| {
-			let guard = sentinel.borrow();
+		self.try_get_entry::<T>().map(|entry| {
+			let guard = match entry.sentinel.try_borrow() {
+				Ok(guard) => guard,
+				Err(err) => self.borrow_violation::<T, _>(entry, err, false),
+			};
 
 			Ref::map(guard, |_| unsafe {
-				let ptr = ptr.get::<*const T>();
+				let ptr = entry.ptr.get::<*const T>();
 				&*ptr
 			})
 		})
@@ -135,11 +149,14 @@ impl<'r> Provider<'r> {
 	}
 
 	pub fn try_get_mut<T: ?Sized + 'static>(&self) -> Option<RefMut<T>> {
-		self.try_get_entry::<T>().map(|(ptr, sentinel)| {
-			let guard = sentinel.borrow_mut();
+		self.try_get_entry::<T>().map(|entry| {
+			let guard = match entry.sentinel.try_borrow_mut() {
+				Ok(guard) => guard,
+				Err(err) => self.borrow_violation::<T, _>(entry, err, true),
+			};
 
 			RefMut::map(guard, |_| unsafe {
-				let ptr = ptr.get::<*mut T>();
+				let ptr = entry.ptr.get::<*mut T>();
 				&mut *ptr
 			})
 		})
@@ -150,11 +167,46 @@ impl<'r> Provider<'r> {
 			.unwrap_or_else(|| self.comp_not_found::<T>())
 	}
 
+	pub fn try_get_frozen<T: ?Sized + 'static>(&self) -> Option<&T> {
+		self.try_get_entry::<T>().map(|entry| {
+			if !entry.readonly.get() {
+				entry.make_readonly();
+			}
+
+			unsafe { &*entry.ptr.get::<*mut T>() }
+		})
+	}
+
+	pub fn get_frozen<T: ?Sized + 'static>(&self) -> &T {
+		self.try_get_frozen()
+			.unwrap_or_else(|| self.comp_not_found::<T>())
+	}
+
 	fn comp_not_found<T: ?Sized + 'static>(&self) -> ! {
 		panic!(
 			"Could not find component of type {:?} in provider {:?}",
 			NamedTypeId::of::<T>(),
 			self,
+		);
+	}
+
+	fn borrow_violation<T: ?Sized + 'static, E: std::error::Error>(
+		&self,
+		entry: &ProviderEntry,
+		err: E,
+		mutably: bool,
+	) -> ! {
+		panic!(
+			"Failed to {} acquire{} component of type {:?} in provider {:?}: {}",
+			if mutably { "mutably" } else { "immutably" },
+			if entry.readonly.get() {
+				" readonly"
+			} else {
+				""
+			},
+			NamedTypeId::of::<T>(),
+			self,
+			err
 		);
 	}
 }
@@ -169,18 +221,6 @@ impl<'a> SpawnSubProvider for Provider<'a> {
 	fn sub_provider<'c>(&'c self) -> Provider<'c> {
 		// Name resolution prioritizes inherent method of the same name.
 		self.sub_provider()
-	}
-
-	fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c> {
-		// Name resolution prioritizes inherent method of the same name.
-		self.sub_provider_with(entries)
-	}
-}
-
-impl SpawnSubProvider for Universe {
-	fn sub_provider<'c>(&'c self) -> Provider<'c> {
-		// Name resolution prioritizes inherent method of the same name.
-		Provider::new(self)
 	}
 
 	fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c> {
@@ -351,6 +391,9 @@ macro_rules! unpack {
 
 #[macro_export]
 macro_rules! provider_from_tuple {
+	($expr:expr) => {
+		$crate::Provider::new_with($crate::Context::reborrow(&mut $expr))
+	};
 	($parent:expr, $expr:expr) => {
 		$crate::context::SpawnSubProvider::sub_provider_with(
 			$parent,

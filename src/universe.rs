@@ -17,7 +17,7 @@ use fnv::FnvBuildHasher;
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::{
-	context::ProviderEntries,
+	context::{ProviderEntries, SpawnSubProvider},
 	debug::{
 		label::{DebugLabel, ReifiedDebugLabel},
 		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
@@ -250,7 +250,7 @@ impl Universe {
 	// === Management === //
 
 	pub fn sub_provider(&self) -> Provider<'_> {
-		Provider::new(self)
+		Provider::new_with(self)
 	}
 
 	pub fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, values: T) -> Provider<'c> {
@@ -306,6 +306,18 @@ impl Universe {
 
 			// (lifetime is killed implicitly on drop)
 		}
+	}
+}
+
+impl SpawnSubProvider for Universe {
+	fn sub_provider<'c>(&'c self) -> Provider<'c> {
+		// Name resolution prioritizes inherent method of the same name.
+		Provider::new_with(self)
+	}
+
+	fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c> {
+		// Name resolution prioritizes inherent method of the same name.
+		self.sub_provider_with(entries)
 	}
 }
 
@@ -601,7 +613,7 @@ pub mod injection {
 				return ProviderResourceGuard::Local(value);
 			}
 
-			ProviderResourceGuard::Universe(src.universe().resource::<T>())
+			ProviderResourceGuard::Universe(src.get_frozen::<Universe>().resource::<T>())
 		}
 
 		fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference {
@@ -620,7 +632,12 @@ pub mod injection {
 				return ProviderResourceRefGuard::Local(value);
 			}
 
-			ProviderResourceRefGuard::Universe(src.universe().resource_rw().try_read().unwrap())
+			ProviderResourceRefGuard::Universe(
+				src.get_frozen::<Universe>()
+					.resource_rw()
+					.try_read()
+					.unwrap(),
+			)
 		}
 
 		fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference {
@@ -639,7 +656,12 @@ pub mod injection {
 				return ProviderResourceMutGuard::Local(value);
 			}
 
-			ProviderResourceMutGuard::Universe(src.universe().resource_rw().try_write().unwrap())
+			ProviderResourceMutGuard::Universe(
+				src.get_frozen::<Universe>()
+					.resource_rw()
+					.try_write()
+					.unwrap(),
+			)
 		}
 
 		fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference {
@@ -658,7 +680,7 @@ pub mod injection {
 				return ProviderResourceArchGuard::Local(value);
 			}
 
-			let universe = src.universe();
+			let universe = src.get_frozen::<Universe>();
 			let arch_id = universe.archetype_resource_id::<T>();
 			let arch_mutex = universe.archetype_by_id(arch_id);
 

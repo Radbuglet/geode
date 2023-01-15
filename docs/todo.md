@@ -15,6 +15,11 @@
   - [ ] Allow for opt-in increases to max arity.
   - [ ] Publish these features.
 - [x] Implement more alias methods in `Universe`.
+- [x] Improve task executors:
+  - [x] Flush universe between tasks.
+  - [x] Remove special case for `Universe` in `Provider` by adding a `get_frozen` method.
+  - [ ] Allow users to provide an input context to the task execution pass.
+  - [ ] Implement a scratch space and give tasks access to it.
 - [ ] Expose `WeakEntity` and `WeakArchetype`.
 - [ ] Allow users to register archetype deletion hooks as custom metadata keys. This can be done safely because deletions are only processed on `flush`.
 - [ ] Allow `EventQueueIter` to be reiterated and polled on individual archetypes.
@@ -25,11 +30,6 @@
 - [ ] Add support for late-initialized `bundle!` components.
 - [ ] Allow more direct manipulation of `Storage` (specifically, expose runs and allow users to get an `UnsafeCell<T>` version of the storage given a mutable reference to it).
 - [ ] Expose `Archetype::spawn_push`, `Archetype::spawn_in_slot`, and `Archetype::iter`.
-- [ ] Improve task executors:
-  - [x] Flush universe between tasks.
-  - [ ] Remove special case for `Universe` in `Provider` by adding a `get_immutable` method.
-  - [ ] Allow users to provide an input context to the task execution pass.
-  - [ ] Implement a scratch space and give tasks access to it.
 - [ ] Implement more storage types:
   - [ ] Single-threaded ref-celling for multi-borrow
   - [ ] Sharding at the archetype level
