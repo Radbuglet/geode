@@ -39,9 +39,11 @@
   - [ ] Sharding at the archetype level
   - [ ] Rayon integration
 - [ ] Implement regular scheduling:
+  - [ ] Implement `Scheduler`
   - [ ] Implement `AsyncProvider`
   - [ ] Implement an `async` version of `unpack!`
   - [ ] Implement pool-based future executor
+  
 
 
 ##### Debug
