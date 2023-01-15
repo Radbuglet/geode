@@ -1,5 +1,7 @@
 # Geode Scheduling
 
+##### The Problem
+
 We would like to implement the following interface:
 
 ```rust
@@ -27,3 +29,20 @@ There is no clever (non PGO'd) heuristic to avoid this scenario—we need the `S
 A simple scheduler could involve storing "blocked dependency" counter for every request in the system. Every time a set of components are acquired, the counter for every dependent request would be increased. Every time a component is released, every request blocked on that component would have its counter decremented. A random thread with a zero counter would gain access to the components it was requesting and all other dependency counters would be incremented.
 
 The running time of this scheme to completion, unfortunately, is $O(n^2)$ w.r.t the number of tasks depending on a given component. This could be fine for small $n$ but the size of this variable can be hard to predict given the variable time taken by every task. Can we do better?
+
+##### First Solution
+
+We'll start by thinking of solutions to scenarios where every component is locked exclusively and extend it to XOR mutability later.
+
+The first data-structure that popped to my mind was the [hierarchical bit-set](https://docs.rs/hibitset/latest/hibitset/index.html). Hibitsets allow you to:
+
+- Store a sparse array of bits where...
+- Determine the list of set bits in $O(n)$ where $n$ is the number of bits set—not the capacity of the bit-set.
+- Take binary `and`s and `or`s of multiple sets and nonetheless iterate them in the same asymptotic time.
+
+If we assign an index to every task (which is easily done using a free list), we can record whether a given component is *not* depended upon by a given task. To determine which tasks could possibly start at a given time, take the bit-set of all the tasks managed by the scheduler and take its bitwise-`and` w.r.t all the `SchedulerComponent.no_dependency` bit-sets whose `is_available` flag is enabled.
+
+```rust
+// TODO: Code demo
+```
+

@@ -62,7 +62,7 @@ struct DestructionList {
 
 struct UniverseTask {
 	name: ReifiedDebugLabel,
-	handler: Box<dyn FnMut(&mut Universe) + Send + Sync>,
+	handler: Box<dyn FnMut(&mut Provider) + Send + Sync>,
 }
 
 impl fmt::Debug for UniverseTask {
@@ -224,7 +224,7 @@ impl Universe {
 
 	pub fn queue_task<F>(&self, name: impl DebugLabel, handler: F)
 	where
-		F: 'static + Send + Sync + FnOnce(&mut Self),
+		F: 'static + Send + Sync + FnOnce(&mut Provider),
 	{
 		let mut handler = Some(handler);
 
@@ -237,11 +237,13 @@ impl Universe {
 	pub fn queue_event_dispatch<E: 'static + Send + Sync>(&self, mut events: EventQueue<E>) {
 		self.queue_task(
 			format_args!("EventQueue<{}> dispatch", type_name::<E>()),
-			move |universe| {
+			move |cx| {
+				let universe = cx.get_frozen::<Universe>();
+
 				for iter in events.flush_all() {
 					let arch = iter.arch();
 					let handler = universe.archetype_meta::<ArchetypeEventQueueHandler<E>>(arch);
-					handler.0.process_universe(universe, iter);
+					handler.0.process(cx, iter);
 				}
 			},
 		);
@@ -258,9 +260,13 @@ impl Universe {
 	}
 
 	pub fn dispatch_tasks(&mut self) {
+		self.dispatch_tasks_with(None);
+	}
+
+	pub fn dispatch_tasks_with(&mut self, cx: Option<&Provider>) {
 		while let Some(mut task) = self.task_queue.get_mut().next_task() {
 			log::trace!("Executing universe task {:?}", task.name);
-			(task.handler)(self);
+			(task.handler)(&mut Provider::new_inherit_with(cx, &mut *self));
 		}
 
 		self.task_queue.get_mut().clear_capacities();

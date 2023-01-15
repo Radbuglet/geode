@@ -249,8 +249,8 @@ impl<E: 'static> EventHandler<E> {
 		E: Send + Sync,
 	{
 		let handler = self.clone();
-		universe.queue_task(name, move |universe| {
-			handler.process_universe(universe, event);
+		universe.queue_task(name, move |cx| {
+			handler.process(cx, event);
 		});
 	}
 }
