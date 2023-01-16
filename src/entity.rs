@@ -14,7 +14,7 @@ use crate::{
 		label::{DebugLabel, NO_LABEL},
 		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
 	},
-	util::{no_hash::RandIdGen, ptr::PointeeCastExt},
+	util::no_hash::RandIdGen,
 	Bundle, Dependent,
 };
 
@@ -215,14 +215,14 @@ impl<M: ?Sized> Archetype<M> {
 	pub fn cast_marker_ref<N: ?Sized>(&self) -> &Archetype<N> {
 		unsafe {
 			// Safety: This struct is `repr(C)` and `N` is only ever used in a `PhantomData`.
-			self.transmute_pointee_ref()
+			transmute(self)
 		}
 	}
 
 	pub fn cast_marker_mut<N: ?Sized>(&mut self) -> &mut Archetype<N> {
 		unsafe {
 			// Safety: This struct is `repr(C)` and `N` is only ever used in a `PhantomData`.
-			self.transmute_pointee_mut()
+			transmute(self)
 		}
 	}
 }

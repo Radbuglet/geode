@@ -22,12 +22,6 @@ pub const unsafe fn sizealign_checked_transmute<A, B>(a: A) -> B {
 	entirely_unchecked_transmute(a)
 }
 
-// === Allocation === //
-
-pub fn leak_on_heap<'a, T>(val: T) -> &'a mut T {
-	Box::leak(Box::new(val))
-}
-
 // === Pointer Casts === //
 
 pub trait PointeeCastExt {

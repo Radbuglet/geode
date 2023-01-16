@@ -1,13 +1,18 @@
-use std::{any::type_name, collections::HashMap, fmt, mem, num::NonZeroU32, vec};
+use std::{
+	any::type_name,
+	borrow::{Borrow, BorrowMut},
+	collections::HashMap,
+	fmt, mem,
+	num::NonZeroU32,
+	vec,
+};
 
 use derive_where::derive_where;
 
 use crate::{
-	context::ExclusiveProvider,
 	debug::lifetime::{DebugLifetime, Dependent},
 	entity::hashers::ArchetypeBuildHasher,
-	util::type_id::NamedTypeId,
-	ArchetypeId, Entity, Provider,
+	ArchetypeId, Entity,
 };
 
 // === Aliases === //
@@ -148,71 +153,16 @@ impl<E> DoubleEndedIterator for EventQueueIter<E> {
 	}
 }
 
-// === EventHandler === //
-
-pub struct EventHandler<E>(Box<dyn EventHandlerTrait<E>>);
-
-impl<E: 'static> fmt::Debug for EventHandler<E> {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.debug_struct(format!("EventHandler<{}>", type_name::<E>()).as_str())
-			.field("handler_ty", &self.0.type_id())
-			.finish_non_exhaustive()
-	}
-}
-
-impl<E: 'static> Clone for EventHandler<E> {
-	fn clone(&self) -> Self {
-		Self(self.0.cloned())
-	}
-}
-
-impl<E: 'static> EventHandler<E> {
-	pub fn new<F>(f: F) -> Self
-	where
-		F: 'static + Fn(&Provider, E) + Send + Sync + Clone,
-	{
-		Self(Box::new(f))
-	}
-
-	pub fn process(&self, cx: &Provider, event: E) {
-		self.0.process(cx, event);
-	}
-}
-
-trait EventHandlerTrait<E>: 'static + Send + Sync {
-	fn cloned(&self) -> Box<dyn EventHandlerTrait<E>>;
-	fn process(&self, cx: &Provider, event: E);
-	fn type_id(&self) -> NamedTypeId;
-}
-
-impl<E, F> EventHandlerTrait<E> for F
-where
-	E: 'static,
-	F: 'static + Fn(&Provider, E) + Send + Sync + Clone,
-{
-	fn cloned(&self) -> Box<dyn EventHandlerTrait<E>> {
-		Box::new(self.clone())
-	}
-
-	fn process(&self, cx: &Provider, event: E) {
-		self(cx, event)
-	}
-
-	fn type_id(&self) -> NamedTypeId {
-		NamedTypeId::of::<Self>()
-	}
-}
-
-// === GenericTaskQueue === //
+// === TaskQueue === //
 
 #[derive(Debug)]
 #[derive_where(Default)]
-pub struct GenericTaskQueue<T> {
+pub struct TaskQueue<T> {
 	task_stack: Vec<T>,
 	tasks_to_add: Vec<T>,
 }
 
-impl<T> GenericTaskQueue<T> {
+impl<T> TaskQueue<T> {
 	pub fn new() -> Self {
 		Self::default()
 	}
@@ -241,7 +191,7 @@ impl<T> GenericTaskQueue<T> {
 	}
 }
 
-impl<T> Drop for GenericTaskQueue<T> {
+impl<T> Drop for TaskQueue<T> {
 	fn drop(&mut self) {
 		let remaining = self.task_stack.len() + self.tasks_to_add.len();
 
@@ -255,52 +205,44 @@ impl<T> Drop for GenericTaskQueue<T> {
 	}
 }
 
-// === TaskQueue === //
+// === OpaqueBox === //
 
-pub type TaskQueue = GenericTaskQueue<TaskHandler<()>>;
+#[derive(Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Default)]
+pub struct OpaqueBox<T: ?Sized>(pub Box<T>);
 
-impl TaskQueue {
-	pub fn run_task_handlers(&mut self, cx: &mut ExclusiveProvider) {
-		while let Some(mut task) = self.next_task() {
-			let mut sub_cx = cx.sub_provider_exclusive_with(&mut *self);
-
-			task.process(&mut sub_cx.as_exclusive(), ());
-		}
+impl<T: ?Sized> fmt::Debug for OpaqueBox<T> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		f.debug_struct(format!("OpaqueBox<{}>", type_name::<T>()).as_str())
+			.finish_non_exhaustive()
 	}
 }
 
-#[derive_where(Debug, Clone; E: 'static)]
-pub struct TaskHandler<E> {
-	pub raw: EventHandler<E>,
-}
-
-impl<E: 'static> TaskHandler<E> {
-	pub fn new<F>(f: F) -> Self
-	where
-		F: 'static + Fn(&mut ExclusiveProvider, E) + Send + Sync + Clone,
-	{
-		Self::new_regular(move |cx, event| f(&mut ExclusiveProvider::unchecked_new(cx), event))
-	}
-
-	pub fn new_regular<F>(f: F) -> Self
-	where
-		F: 'static + Fn(&Provider, E) + Send + Sync + Clone,
-	{
-		Self {
-			raw: EventHandler::new(f),
-		}
-	}
-
-	pub fn process(&mut self, cx: &mut ExclusiveProvider, event: E) {
-		self.raw.process(cx, event);
+impl<T: ?Sized> From<Box<T>> for OpaqueBox<T> {
+	fn from(value: Box<T>) -> Self {
+		Self(value)
 	}
 }
 
-impl<E: 'static, F> From<F> for TaskHandler<E>
-where
-	F: 'static + Fn(&mut ExclusiveProvider, E) + Send + Sync + Clone,
-{
-	fn from(value: F) -> Self {
-		Self::new(value)
+impl<T: ?Sized> Borrow<Box<T>> for OpaqueBox<T> {
+	fn borrow(&self) -> &Box<T> {
+		&self.0
+	}
+}
+
+impl<T: ?Sized> BorrowMut<Box<T>> for OpaqueBox<T> {
+	fn borrow_mut(&mut self) -> &mut Box<T> {
+		&mut self.0
+	}
+}
+
+impl<T: ?Sized> Borrow<T> for OpaqueBox<T> {
+	fn borrow(&self) -> &T {
+		&self.0
+	}
+}
+
+impl<T: ?Sized> BorrowMut<T> for OpaqueBox<T> {
+	fn borrow_mut(&mut self) -> &mut T {
+		&mut self.0
 	}
 }

@@ -6,7 +6,6 @@ use crate::{
 	debug::lifetime::{DebugLifetime, Dependent, LifetimeLike},
 	entity::hashers::ArchetypeBuildHasher,
 	query::{QueryIter, StorageIterMut, StorageIterRef},
-	universe::{BuildableResourceRw, Universe},
 	ArchetypeId, Entity, Query,
 };
 
@@ -313,11 +312,5 @@ impl<T> StorageRunSlot<T> {
 
 	pub fn value_mut(&mut self) -> &mut T {
 		&mut self.value
-	}
-}
-
-impl<T: 'static + Send + Sync> BuildableResourceRw for Storage<T> {
-	fn create(_universe: &Universe) -> Self {
-		Storage::default()
 	}
 }
