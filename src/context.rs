@@ -5,6 +5,7 @@ use std::{
 	fmt,
 	marker::PhantomData,
 	mem,
+	ops::Deref,
 };
 
 use fnv::FnvBuildHasher;
@@ -212,13 +213,13 @@ impl<'r> Provider<'r> {
 }
 
 pub trait SpawnSubProvider {
-	fn sub_provider<'c>(&'c self) -> Provider<'c>;
+	fn sub_provider(&self) -> Provider<'_>;
 
 	fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c>;
 }
 
 impl<'a> SpawnSubProvider for Provider<'a> {
-	fn sub_provider<'c>(&'c self) -> Provider<'c> {
+	fn sub_provider(&self) -> Provider<'_> {
 		// Name resolution prioritizes inherent method of the same name.
 		self.sub_provider()
 	}
@@ -323,6 +324,103 @@ impl<'provider, 'guard: 'borrow, 'borrow, T: ?Sized + 'static>
 
 	fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference {
 		&mut *guard
+	}
+}
+
+// === BypassClean === //
+
+pub trait BypassClean {}
+
+pub trait UnpackTargetBypassesClean {}
+
+impl<T: ?Sized + 'static + BypassClean> UnpackTargetBypassesClean for &'_ T {}
+
+impl<T: ?Sized + 'static + BypassClean> UnpackTargetBypassesClean for &'_ mut T {}
+
+// === CleanProvider === //
+
+/// A `CleanProvider` is a new-typed [`Provider`] that encodes the assumption of being
+/// entirely unborrowed into the type-system. In essence, they're like a mutable reference to
+/// a [`Provider`] with special escape-hatches to make them useful in practice.
+///
+/// `CleanProviders` immutably dereference to [`Provider`]s meaning that, to actually
+/// benefit from the guarantee of cleanliness, you must typically pass a mutable reference to
+/// your `CleanProvider`. Transfer of ownership could also work well, although doing so would
+/// prevent you from reborrowing.
+///
+/// Where `CleanProviders` shine is their two escape hatches:
+///
+/// - [`CleanProvider::escape_safe`], which returns a [`SafeCleanProvider`] with a lifetime independent
+///   of the lifetime of the borrow. This `SafeCleanProvider` instance allows you to access components
+///   implementing the [`BypassClean`] trait. In other words, you can hold onto a `SafeCleanProvider`
+///   and borrow a select few components from it while you pass the `CleanProvider` instance to another
+///   method.
+///- [`CleanProvider::escape_unchecked`], which returns a [`Provider`] with a lifetime independent
+///  of the lifetime of the borrow. Once you do this, however, all bets are off! Be very careful
+///  about how you use this.
+///
+#[derive(Debug)]
+pub struct CleanProvider<'r>(&'r Provider<'r>);
+
+impl<'r> CleanProvider<'r> {
+	pub fn new<'r2: 'r>(provider: &'r mut Provider<'r2>) -> Self {
+		assert!(provider.parent().is_none());
+
+		Self::unchecked_new(provider)
+	}
+
+	pub fn unchecked_new(provider: &'r Provider<'r>) -> Self {
+		Self(provider)
+	}
+
+	pub fn into_raw_provider(self) -> &'r Provider<'r> {
+		self.0
+	}
+
+	pub fn escape_safe(&self) -> SafeCleanProvider<'r> {
+		SafeCleanProvider(self.0)
+	}
+
+	pub fn escape_unchecked(&self) -> &'r Provider<'r> {
+		self.0
+	}
+}
+
+impl<'r> Deref for CleanProvider<'r> {
+	type Target = Provider<'r>;
+
+	fn deref(&self) -> &Self::Target {
+		self.0
+	}
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct SafeCleanProvider<'r>(&'r Provider<'r>);
+
+impl<'r> SafeCleanProvider<'r> {
+	pub fn unchecked_new(target: &'r Provider<'r>) -> Self {
+		Self(target)
+	}
+
+	pub fn unchecked_raw(&self) -> &'r Provider<'r> {
+		self.0
+	}
+}
+
+impl<'p, 'guard, 'borrow, T> UnpackTarget<'guard, 'borrow, SafeCleanProvider<'p>> for T
+where
+	'guard: 'borrow,
+	T: UnpackTarget<'guard, 'borrow, Provider<'p>> + UnpackTargetBypassesClean,
+{
+	type Guard = T::Guard;
+	type Reference = T::Reference;
+
+	fn acquire_guard(src: &'guard SafeCleanProvider<'p>) -> Self::Guard {
+		T::acquire_guard(src.unchecked_raw())
+	}
+
+	fn acquire_ref(guard: &'borrow mut Self::Guard) -> Self::Reference {
+		T::acquire_ref(guard)
 	}
 }
 

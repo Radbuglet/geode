@@ -19,12 +19,20 @@
   - [x] Flush universe between tasks.
   - [x] Remove special case for `Universe` in `Provider` by adding a `get_frozen` method.
   - [x] Allow users to provide an input context to the task execution pass.
-  - [ ] Make sure that `Providers` "thaw" the components of their ancestors that they froze to avoid unexpected freezing.
+  - [ ] Make sure that `Providers` thaw the components of their ancestors that they froze to avoid unexpected freezing.
   - [ ] Implement a scratch space and give tasks access to it.
-- [ ] Allow users to register archetype deletion hooks as custom metadata keys. This can be done safely because deletions are only processed on `flush`.
-- [ ] Implement `Universe`-global `EventQueues`.
-- [ ] Optimize tag querying, add `TagId`-namespaced archetype metadata.
-- [ ] Add support for non-auto-initializable `Universe` resources.
+- [ ] Improve task executors part 2:
+  - [x] Implement `CleanProvider`.
+  - [x] Implement `TaskHandler`.
+  - [ ] Implement `TaskQueue` and remove universe's queue in favor of using it directly. With this change, there should no longer be any mentions of `Universe` in `event.rs`.
+- [ ] Remove special cases for universe systems:
+  - [ ] Extract `ArchetypeAnnotator`.
+  - [ ] Allow users to register archetype deletion hooks as custom metadata keys. This can be done safely because deletions are only processed on `flush`.
+  - [ ] Optimize tag querying, add `TagId`-namespaced archetype metadata.
+- [ ] Improve the universe resource system:
+  - [ ] Implement `Universe`-global `EventQueues`.
+  - [ ] Add support for non-auto-initializable `Universe` resources.
+  - [ ] Extract as well?
 
 ##### Entity Model
 
@@ -33,6 +41,8 @@
 - [ ] Expose `Archetype::spawn_push`, `Archetype::spawn_in_slot`, and `Archetype::iter`.
 - [ ] Singleton bundles.
 - [ ] Allow `EventQueueIter` to be reiterated and polled on individual archetypes.
+- [ ] Implement `MappedStorage` and the `StorageView` trait.
+- [ ] Implement `Signal`.
 
 ##### Multi-Threading
 
@@ -83,11 +93,15 @@ Essentially, we need a pattern where *nested dispatch* is encouraged. In other w
 There are four types of dispatches supported by the current design:
 
 1. **Universe Tasks:** These allow a handler to knowingly acquire the *entire* application context and receive the very strong guarantee that it is the only handler doing so at a given time.
-2. **Async Providers and Thread Pools:** These implement the ECS-style exclusive access mechanisms we're all very used to. They provide similar borrow validity guarantees to universe tasks but are less picky about when they are executed.
-3. **Context Tuples:** These allow users to immediately call a function with a compile-time-known set of components without any queueing. Context passing in these dispatches is resolved statically.
-4. **Providers:** These allow users to immediately call a function with a type-erased set of components without any queueing.
+2. **Context Tuples:** These allow users to immediately call a function with a compile-time-known set of components without any queueing. Context passing in these dispatches is resolved statically.
+3. **Providers:** These allow users to immediately call a function with a type-erased set of components without any queueing.
+4. **Async Providers and Thread Pools:** These implement the ECS-style parallel executor we're all used to.
 
-Universe tasks and async providers perfectly satisfy the first property. Context tuples perfectly satisfy the second property. Providers, meanwhile, satisfy neither property and are extremely dangerous because of it. Fortunately, direct provider dispatches are very rare and can often be replaced by an `EventQueue` dispatch—which would likely be more efficient for most userland uses anyways.
+Universe tasks perfectly satisfy the first property but are quite heavyweight. Context tuples perfectly satisfy the second property and are extremely cheap.
+
+Providers (both synchronous and asynchronous) are a bit more complicated. On their own, they satisfy neither property and are extremely dangerous because of it. However, you can emulate the guarantees provided by universe tasks through informal contracts. Because most `Providers` and `AsyncProviders` are used to dispatch child task sets (e.g. a game engine dispatching a game scene handler dispatching a plugin handler dispatching an entity handler, etc...), by making clear which components are internal state that shouldn't be back-referenced, child handlers can more-or-less behave like universe tasks.
+
+We may try to enforce this type of contract statically in the future.
 
 ##### State Structuring
 
@@ -115,5 +129,13 @@ There are a few questions that need to be answered in order to use `EventQueues`
 
 The first question could get a bit tricky if multiple layers of execution decide to provide their own version of the same `EventQueue`. Therefore, I find it quite beneficial to store every `EventQueue` in the `Universe` and provide `Universe::push_to_queue<T>(EventQueue<T>)` and `Universe::take_queue<T>() -> EventQueueIter<T>` methods to access it.
 
-TODO: Think about these problems a bit more.
+==TODO: Think about these problems a bit more.==
 
+##### Summarizing Foot-Guns
+
+Geode has a few foot-guns:
+
+- The overuse of `EventHandler`.
+- Using multiple `Storages` for a given component instead of using proper sharding.
+- Using a raw `Archetype<T>` instead of an `ArchetypeHandle<T>`.
+- Assuming that callers will not call `get_frozen` on a given component.

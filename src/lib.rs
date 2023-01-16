@@ -14,7 +14,7 @@ pub mod prelude {
 	pub use crate::{
 		bundle::{bundle, Bundle},
 		context::{decompose, provider_from_tuple, unpack, Context, Provider},
-		debug::lifetime::Dependent,
+		debug::{lifetime::Dependent, label::NO_LABEL},
 		entity::{Archetype, ArchetypeId, Entity},
 		event::{DestroyQueue, EntityDestroyEvent, EventHandler, EventQueue, EventQueueIter},
 		query::Query,

@@ -3,13 +3,11 @@ use std::{any::type_name, collections::HashMap, fmt, mem, num::NonZeroU32, vec};
 use derive_where::derive_where;
 
 use crate::{
-	debug::{
-		label::DebugLabel,
-		lifetime::{DebugLifetime, Dependent},
-	},
+	context::CleanProvider,
+	debug::lifetime::{DebugLifetime, Dependent},
 	entity::hashers::ArchetypeBuildHasher,
 	util::type_id::NamedTypeId,
-	ArchetypeId, Entity, Provider, Universe,
+	ArchetypeId, Entity, Provider,
 };
 
 // === Aliases === //
@@ -150,58 +148,6 @@ impl<E> DoubleEndedIterator for EventQueueIter<E> {
 	}
 }
 
-// === TaskQueue === //
-
-#[derive(Debug)]
-#[derive_where(Default)]
-pub struct TaskQueue<T> {
-	task_stack: Vec<T>,
-	tasks_to_add: Vec<T>,
-}
-
-impl<T> TaskQueue<T> {
-	pub fn new() -> Self {
-		Self::default()
-	}
-
-	pub fn push(&mut self, task: T) {
-		// These are queued in a separate buffer and moved into the main buffer during `next_task`
-		// to ensure that tasks are pushed in an intuitive order.
-		self.tasks_to_add.push(task);
-	}
-
-	pub fn next_task(&mut self) -> Option<T> {
-		// Move all tasks from `tasks_to_add` to `task_stack`. This flips their order, which is
-		// desireable.
-		self.task_stack.reserve(self.tasks_to_add.len());
-		while let Some(to_add) = self.tasks_to_add.pop() {
-			self.task_stack.push(to_add);
-		}
-
-		// Now, pop off the next task to be ran.
-		self.task_stack.pop()
-	}
-
-	pub fn clear_capacities(&mut self) {
-		self.task_stack = Vec::new();
-		self.tasks_to_add = Vec::new();
-	}
-}
-
-impl<T> Drop for TaskQueue<T> {
-	fn drop(&mut self) {
-		let remaining = self.task_stack.len() + self.tasks_to_add.len();
-
-		if remaining > 0 {
-			log::warn!(
-				"Leaked {} event{} on the TaskQueue.",
-				remaining,
-				if remaining == 1 { "" } else { "s" },
-			);
-		}
-	}
-}
-
 // === EventHandler === //
 
 pub struct EventHandler<E>(Box<dyn EventHandlerTrait<E>>);
@@ -231,17 +177,6 @@ impl<E: 'static> EventHandler<E> {
 	pub fn process(&self, cx: &Provider, event: E) {
 		self.0.process(cx, event);
 	}
-
-	pub fn process_as_task<L>(&self, universe: &Universe, name: L, event: E)
-	where
-		L: DebugLabel,
-		E: Send + Sync,
-	{
-		let handler = self.clone();
-		universe.queue_task(name, move |cx| {
-			handler.process(cx, event);
-		});
-	}
 }
 
 trait EventHandlerTrait<E>: 'static + Send + Sync {
@@ -268,15 +203,76 @@ where
 	}
 }
 
-// === UniverseEventHandler === //
+// === GenericTaskQueue === //
+
+#[derive(Debug)]
+#[derive_where(Default)]
+pub struct GenericTaskQueue<T> {
+	task_stack: Vec<T>,
+	tasks_to_add: Vec<T>,
+}
+
+impl<T> GenericTaskQueue<T> {
+	pub fn new() -> Self {
+		Self::default()
+	}
+
+	pub fn push(&mut self, task: T) {
+		// These are queued in a separate buffer and moved into the main buffer during `next_task`
+		// to ensure that tasks are pushed in an intuitive order.
+		self.tasks_to_add.push(task);
+	}
+
+	pub fn next_task(&mut self) -> Option<T> {
+		// Move all tasks from `tasks_to_add` to `task_stack`. This flips their order, which is
+		// desireable.
+		self.task_stack.reserve(self.tasks_to_add.len());
+		while let Some(to_add) = self.tasks_to_add.pop() {
+			self.task_stack.push(to_add);
+		}
+
+		// Now, pop off the next task to be ran.
+		self.task_stack.pop()
+	}
+
+	pub fn clear_capacities(&mut self) {
+		self.task_stack = Vec::new();
+		self.tasks_to_add = Vec::new();
+	}
+}
+
+impl<T> Drop for GenericTaskQueue<T> {
+	fn drop(&mut self) {
+		let remaining = self.task_stack.len() + self.tasks_to_add.len();
+
+		if remaining > 0 {
+			log::warn!(
+				"Leaked {} task{} on the `TaskQueue`.",
+				remaining,
+				if remaining == 1 { "" } else { "s" },
+			);
+		}
+	}
+}
+
+// === TaskQueue === //
+
+pub type TaskQueue = GenericTaskQueue<TaskHandler<()>>;
+
+impl TaskQueue {
+	pub fn run_tasks(&mut self, cx: &mut CleanProvider) {
+		while let Some(mut task) = self.next_task() {
+			task.process(cx, ());
+		}
+	}
+}
 
 #[derive_where(Debug, Clone; E: 'static)]
-#[repr(transparent)]
-pub struct UniverseEventHandler<E> {
+pub struct TaskHandler<E> {
 	pub raw: EventHandler<E>,
 }
 
-impl<E: 'static> UniverseEventHandler<E> {
+impl<E: 'static> TaskHandler<E> {
 	pub fn new<F>(f: F) -> Self
 	where
 		F: 'static + Fn(&Provider, E) + Send + Sync + Clone,
@@ -286,11 +282,14 @@ impl<E: 'static> UniverseEventHandler<E> {
 		}
 	}
 
-	pub fn process_as_task<L>(&self, universe: &Universe, name: L, event: E)
+	pub fn new_clean<F>(f: F) -> Self
 	where
-		L: DebugLabel,
-		E: Send + Sync,
+		F: 'static + Fn(&mut CleanProvider) + Send + Sync + Clone,
 	{
-		self.raw.process_as_task(universe, name, event)
+		Self::new(move |cx, _| f(&mut CleanProvider::unchecked_new(cx)))
+	}
+
+	pub fn process(&mut self, cx: &mut CleanProvider, event: E) {
+		self.raw.process(&cx, event);
 	}
 }

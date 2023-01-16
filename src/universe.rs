@@ -23,7 +23,7 @@ use crate::{
 		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
 	},
 	entity::hashers::ArchetypeBuildHasher,
-	event::{TaskQueue, UniverseEventHandler},
+	event::{GenericTaskQueue, TaskHandler},
 	util::{eventual_map::EventualMap, ptr::PointeeCastExt, type_map::TypeMap},
 	Archetype, ArchetypeId, EventQueue, EventQueueIter, Provider, Storage,
 };
@@ -37,7 +37,7 @@ pub struct Universe {
 	tag_alloc: AtomicU64,
 	dirty_archetypes: Mutex<HashSet<ArchetypeId>>,
 	resources: TypeMap,
-	task_queue: Mutex<TaskQueue<UniverseTask>>,
+	task_queue: Mutex<GenericTaskQueue<UniverseTask>>,
 	destruction_list: Arc<DestructionList>,
 }
 
@@ -135,7 +135,7 @@ impl Universe {
 	{
 		self.add_archetype_meta::<ArchetypeEventQueueHandler<E>>(
 			id,
-			ArchetypeEventQueueHandler(UniverseEventHandler::new(handler)),
+			ArchetypeEventQueueHandler(TaskHandler::new(handler)),
 		);
 	}
 
@@ -316,7 +316,7 @@ impl Universe {
 }
 
 impl SpawnSubProvider for Universe {
-	fn sub_provider<'c>(&'c self) -> Provider<'c> {
+	fn sub_provider(&self) -> Provider<'_> {
 		// Name resolution prioritizes inherent method of the same name.
 		Provider::new_with(self)
 	}
@@ -470,7 +470,7 @@ impl LifetimeLike for TagId {
 // === Universe helpers === //
 
 #[derive_where(Debug, Clone)]
-pub struct ArchetypeEventQueueHandler<E: 'static>(pub UniverseEventHandler<EventQueueIter<E>>);
+pub struct ArchetypeEventQueueHandler<E: 'static>(pub TaskHandler<EventQueueIter<E>>);
 
 #[derive_where(Debug)]
 pub struct ArchetypeHandleResource<T: ?Sized>(pub ArchetypeHandle<T>);
