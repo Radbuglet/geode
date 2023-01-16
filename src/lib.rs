@@ -13,7 +13,7 @@ mod util;
 pub mod prelude {
 	pub use crate::{
 		bundle::{bundle, Bundle},
-		context::{decompose, unpack, Context, Provider},
+		context::{decompose, unpack, Context, ExclusiveProvider, Provider},
 		debug::{label::NO_LABEL, lifetime::Dependent},
 		entity::{Archetype, ArchetypeId, Entity},
 		event::{DestroyQueue, EntityDestroyEvent, EventHandler, EventQueue, EventQueueIter},

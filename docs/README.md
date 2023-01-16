@@ -7,9 +7,9 @@ A Scheduling-Flexible, Powerful ECS
 There are four major components to Geode:
 
 - **Component Storages**, which provide mechanisms for creating entities, attaching components to them, and accessing those components through either random access or querying.
+- **Universes**, which provide mechanisms for automatically creating and accessing global state (e.g. storages and some archetypes), annotating archetypes with metadata, and scheduling tasks for execution with exclusive access to that global state.
 - **Providers and Context Tuples**, which provide mechanisms for efficiently and ergonomically passing context from one function to the next, even if the context required by the function is determined dynamically.
 - **Events**, which provide mechanisms for queueing up events on entities, defining debug-printable lazily-boxed function handlers, and scheduling function graphs with state dependencies for concurrent execution.
-- **Universes**, which provide mechanisms for automatically creating and accessing global state (e.g. storages and some archetypes), annotating archetypes with metadata, and scheduling tasks for execution with exclusive access to that global state.
 
 ### Component Storages
 
@@ -149,4 +149,39 @@ let is_condemned = my_player.is_condemned();
 assert!(is_condemned == cfg!(debug_assertions));
 ```
 
-==TODO: Document `WeakEntity` and `WeakArchetype` are finalized.==
+==TODO: Document `WeakEntity` and `WeakArchetype` when finalized.==
+
+### Universes
+
+**Universes**, like *worlds* in traditional entity-component-systems, are a store of global state. However, unlike ECS worlds, universes typically only store `Storage`s and `Archetype`s—that's it! It is very rare, although it is allowed, to store global state in the same way that you would store singletons as resources in an ECS world.
+
+We can get away with this in Geode because, unlike a traditional ECS, Geode encourages you to define systems as regular functions receiving their context through their arguments. For example, instead of storing a timer as a resource so that game systems have access to it, the object in charge of handling that scene could pass the entire scene context to its list of dependencies. This ensures that, for example, we can create multiple scenes in a given world without having to replace every instance of a timer resource with a timer component on a scene entity. The mechanisms that make this type of context-passing possible is described in the [providers and context tuples](#providers-and-context-tuples) section.
+
+Although the previous paragraph would suggest that all forms of global state are anti-patterns, encouraging a design where the `Universe` is omitted entirely, we have good reason to put make most `Storages` and some `Archetypes` singletons. ==TODO==
+
+Enough rambling! Here's how to use a `Universe`:
+
+```rust
+// TODO
+```
+
+==TODO==
+
+### Providers and Context Tuples
+
+Providers and context tuples standardize the way in which we pass context to functions.
+
+==TODO==
+
+## Events
+
+==TODO==
+
+#### Multi-Threading
+
+==TODO==
+
+## Examples
+
+==TODO==
+

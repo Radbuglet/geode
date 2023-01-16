@@ -21,19 +21,25 @@
   - [x] Remove special case for `Universe` in `Provider` by adding a `get_frozen` method.
   - [x] Allow users to provide an input context to the task execution pass.
 - [x] Improve task executors part 2:
-  - [x] Implement `CleanProvider`.
+  - [x] Implement `ExclusiveProvider`.
   - [x] Add support for nesting `CleanProvider` instances.
   - [x] Implement `TaskHandler`.
   - [x] Implement `TaskQueue` such that it a) has all the proper convenience methods and b) allows users to add tasks to it within their own executors.
-  - [ ] Remove universe's queue.
-- [ ] Remove special cases for universe systems:
-  - [ ] Extract `ArchetypeAnnotator`.
+  - [ ] Make this thing safer:
+    - [ ] `get_frozen` can unexpectedly change the way a provider behaves. (maybe make `get_frozen` operate on a per-provider map of type IDs to `Ref<T>` instances such that the effect is limited to the lifetime of the providers freezing it)
+    - [ ] Users can pass unclean `Universe` instances to a `Provider` and nonetheless promote it to an `ExclusiveProvider`.
+    - [ ] Blocking variants of resource acquisition methods probably shouldn't be exposed.
+  - [ ] Ease of use:
+    - [ ] Creating an `ExclusiveProvider` for the purpose of inheritance can be quite tedious.
+    - [ ] `unpack` requires an explicit deref to use `ExclusiveProvider`.
+    - [ ] Many bypass-safe `Universe` methods like `archetype_meta`, `archetype_by_handle`, *etc* should be exposed directly from `ExclusiveProvider` and its various variants.
+- [x] Improve the universe resource system:
+  - [x] Remove universe's built-in queue to avoid misuse.
   - [ ] Allow users to register archetype deletion hooks as custom metadata keys. This can be done safely because deletions are only processed on `flush`.
-  - [ ] Optimize tag querying, add `TagId`-namespaced archetype metadata.
-- [ ] Improve the universe resource system:
+  - [ ] Optimize tag querying
+  - [ ] Add `TagId`-namespaced archetype metadata.
   - [ ] Implement `Universe`-global `EventQueues`.
   - [ ] Add support for non-auto-initializable `Universe` resources.
-  - [ ] Extract as well?
 
 ##### Entity Model
 

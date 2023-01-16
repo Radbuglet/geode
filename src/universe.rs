@@ -2,7 +2,6 @@ use std::{
 	any::type_name,
 	borrow::Borrow,
 	collections::HashSet,
-	fmt,
 	marker::PhantomData,
 	mem::{self, transmute},
 	num::NonZeroU64,
@@ -19,13 +18,12 @@ use parking_lot::{MappedMutexGuard, Mutex, MutexGuard, RwLock, RwLockReadGuard, 
 use crate::{
 	context::ProviderEntries,
 	debug::{
-		label::{DebugLabel, ReifiedDebugLabel},
+		label::DebugLabel,
 		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
 	},
 	entity::hashers::ArchetypeBuildHasher,
-	event::{GenericTaskQueue, TaskHandler},
 	util::{eventual_map::EventualMap, ptr::PointeeCastExt, type_map::TypeMap},
-	Archetype, ArchetypeId, EventQueue, EventQueueIter, Provider, Storage,
+	Archetype, ArchetypeId, Provider, Storage,
 };
 
 // === Universe === //
@@ -37,7 +35,6 @@ pub struct Universe {
 	tag_alloc: AtomicU64,
 	dirty_archetypes: Mutex<HashSet<ArchetypeId>>,
 	resources: TypeMap,
-	task_queue: Mutex<GenericTaskQueue<UniverseTask>>,
 	destruction_list: Arc<DestructionList>,
 }
 
@@ -58,19 +55,6 @@ struct TagInner {
 struct DestructionList {
 	archetypes: Mutex<Vec<ArchetypeId>>,
 	tags: Mutex<Vec<TagId>>,
-}
-
-struct UniverseTask {
-	name: ReifiedDebugLabel,
-	handler: Box<dyn FnMut(&mut Provider) + Send + Sync>,
-}
-
-impl fmt::Debug for UniverseTask {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.debug_struct("UniverseTask")
-			.field("name", &self.name)
-			.finish_non_exhaustive()
-	}
 }
 
 impl Universe {
@@ -125,18 +109,6 @@ impl Universe {
 	pub fn add_archetype_meta<T: 'static + Send + Sync>(&self, id: ArchetypeId, value: T) {
 		self.archetypes[&id].meta.add(value);
 		self.dirty_archetypes.lock().insert(id);
-	}
-
-	pub fn add_archetype_queue_handler<E, F>(&self, id: ArchetypeId, handler: F)
-	where
-		E: 'static,
-		F: 'static + Send + Sync,
-		F: Fn(&Provider, EventQueueIter<E>) + Clone,
-	{
-		self.add_archetype_meta::<ArchetypeEventQueueHandler<E>>(
-			id,
-			ArchetypeEventQueueHandler(TaskHandler::new_regular(handler)),
-		);
 	}
 
 	pub fn try_get_archetype_meta<T: 'static + Send + Sync>(&self, id: ArchetypeId) -> Option<&T> {
@@ -220,35 +192,6 @@ impl Universe {
 		self.resource_rw().try_write().unwrap()
 	}
 
-	// === Event Queue === //
-
-	pub fn queue_task<F>(&self, name: impl DebugLabel, handler: F)
-	where
-		F: 'static + Send + Sync + FnOnce(&mut Provider),
-	{
-		let mut handler = Some(handler);
-
-		self.task_queue.lock().push(UniverseTask {
-			name: name.reify(),
-			handler: Box::new(move |universe| (handler.take().unwrap())(universe)),
-		});
-	}
-
-	pub fn queue_event_dispatch<E: 'static + Send + Sync>(&self, mut events: EventQueue<E>) {
-		self.queue_task(
-			format_args!("EventQueue<{}> dispatch", type_name::<E>()),
-			move |cx| {
-				let universe = cx.get_frozen::<Universe>();
-
-				for iter in events.flush_all() {
-					let arch = iter.arch();
-					let handler = universe.archetype_meta::<ArchetypeEventQueueHandler<E>>(arch);
-					handler.0.raw.process(cx, iter);
-				}
-			},
-		);
-	}
-
 	// === Management === //
 
 	pub fn sub_provider(&self) -> Provider<'_> {
@@ -257,19 +200,6 @@ impl Universe {
 
 	pub fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, values: T) -> Provider<'c> {
 		self.sub_provider().with(values)
-	}
-
-	pub fn dispatch_tasks(&mut self) {
-		self.dispatch_tasks_with(None);
-	}
-
-	pub fn dispatch_tasks_with(&mut self, cx: Option<&Provider>) {
-		while let Some(mut task) = self.task_queue.get_mut().next_task() {
-			log::trace!("Executing universe task {:?}", task.name);
-			(task.handler)(&mut Provider::new_inherit_with(cx, &mut *self));
-		}
-
-		self.task_queue.get_mut().clear_capacities();
 	}
 
 	pub fn flush_nurseries(&mut self) {
@@ -344,15 +274,6 @@ impl<M: ?Sized> ArchetypeHandle<M> {
 
 	pub fn tag(&self, universe: &Universe, tag: TagId) {
 		universe.tag_archetype(self.id(), tag)
-	}
-
-	pub fn add_queue_handler<E, F>(&self, universe: &Universe, handler: F)
-	where
-		E: 'static,
-		F: 'static + Send + Sync,
-		F: Fn(&Provider, EventQueueIter<E>) + Clone,
-	{
-		universe.add_archetype_queue_handler(self.id(), handler);
 	}
 
 	pub fn cast_marker<N: ?Sized>(self) -> ArchetypeHandle<N> {
@@ -456,9 +377,6 @@ impl LifetimeLike for TagId {
 }
 
 // === Universe helpers === //
-
-#[derive_where(Debug, Clone)]
-pub struct ArchetypeEventQueueHandler<E: 'static>(pub TaskHandler<EventQueueIter<E>>);
 
 #[derive_where(Debug)]
 pub struct ArchetypeHandleResource<T: ?Sized>(pub ArchetypeHandle<T>);
