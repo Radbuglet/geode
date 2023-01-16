@@ -8,6 +8,7 @@
   - [x] Update `unpack!` to use new `decompose!` macro.
   - [x] Clean up `unpack!` macro forms.
   - [x] Remove component limit on `unpack!` now that cons-lists have proper support?
+  - [ ] Implement `provider_from_tuple` again.
 - [x] Additional `decompose!` features:
   - [x] Allow users to decompose temporaries
   - [x] Expose the functionality to make something a cons-list without the need for `decompose!(...x => ()).1` jank.
@@ -19,12 +20,12 @@
   - [x] Flush universe between tasks.
   - [x] Remove special case for `Universe` in `Provider` by adding a `get_frozen` method.
   - [x] Allow users to provide an input context to the task execution pass.
-  - [ ] Make sure that `Providers` thaw the components of their ancestors that they froze to avoid unexpected freezing.
-  - [ ] Implement a scratch space and give tasks access to it.
-- [ ] Improve task executors part 2:
+- [x] Improve task executors part 2:
   - [x] Implement `CleanProvider`.
+  - [x] Add support for nesting `CleanProvider` instances.
   - [x] Implement `TaskHandler`.
-  - [ ] Implement `TaskQueue` and remove universe's queue in favor of using it directly. With this change, there should no longer be any mentions of `Universe` in `event.rs`.
+  - [x] Implement `TaskQueue` such that it a) has all the proper convenience methods and b) allows users to add tasks to it within their own executors.
+  - [ ] Remove universe's queue.
 - [ ] Remove special cases for universe systems:
   - [ ] Extract `ArchetypeAnnotator`.
   - [ ] Allow users to register archetype deletion hooks as custom metadata keys. This can be done safely because deletions are only processed on `flush`.

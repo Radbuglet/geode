@@ -3,7 +3,7 @@ use std::{any::type_name, collections::HashMap, fmt, mem, num::NonZeroU32, vec};
 use derive_where::derive_where;
 
 use crate::{
-	context::CleanProvider,
+	context::ExclusiveProvider,
 	debug::lifetime::{DebugLifetime, Dependent},
 	entity::hashers::ArchetypeBuildHasher,
 	util::type_id::NamedTypeId,
@@ -217,10 +217,10 @@ impl<T> GenericTaskQueue<T> {
 		Self::default()
 	}
 
-	pub fn push(&mut self, task: T) {
+	pub fn push(&mut self, task: impl Into<T>) {
 		// These are queued in a separate buffer and moved into the main buffer during `next_task`
 		// to ensure that tasks are pushed in an intuitive order.
-		self.tasks_to_add.push(task);
+		self.tasks_to_add.push(task.into());
 	}
 
 	pub fn next_task(&mut self) -> Option<T> {
@@ -260,9 +260,11 @@ impl<T> Drop for GenericTaskQueue<T> {
 pub type TaskQueue = GenericTaskQueue<TaskHandler<()>>;
 
 impl TaskQueue {
-	pub fn run_tasks(&mut self, cx: &mut CleanProvider) {
+	pub fn run_task_handlers(&mut self, cx: &mut ExclusiveProvider) {
 		while let Some(mut task) = self.next_task() {
-			task.process(cx, ());
+			let mut sub_cx = cx.sub_provider_exclusive_with(&mut *self);
+
+			task.process(&mut sub_cx.as_exclusive(), ());
 		}
 	}
 }
@@ -275,6 +277,13 @@ pub struct TaskHandler<E> {
 impl<E: 'static> TaskHandler<E> {
 	pub fn new<F>(f: F) -> Self
 	where
+		F: 'static + Fn(&mut ExclusiveProvider, E) + Send + Sync + Clone,
+	{
+		Self::new_regular(move |cx, event| f(&mut ExclusiveProvider::unchecked_new(cx), event))
+	}
+
+	pub fn new_regular<F>(f: F) -> Self
+	where
 		F: 'static + Fn(&Provider, E) + Send + Sync + Clone,
 	{
 		Self {
@@ -282,14 +291,16 @@ impl<E: 'static> TaskHandler<E> {
 		}
 	}
 
-	pub fn new_clean<F>(f: F) -> Self
-	where
-		F: 'static + Fn(&mut CleanProvider) + Send + Sync + Clone,
-	{
-		Self::new(move |cx, _| f(&mut CleanProvider::unchecked_new(cx)))
+	pub fn process(&mut self, cx: &mut ExclusiveProvider, event: E) {
+		self.raw.process(cx, event);
 	}
+}
 
-	pub fn process(&mut self, cx: &mut CleanProvider, event: E) {
-		self.raw.process(&cx, event);
+impl<E: 'static, F> From<F> for TaskHandler<E>
+where
+	F: 'static + Fn(&mut ExclusiveProvider, E) + Send + Sync + Clone,
+{
+	fn from(value: F) -> Self {
+		Self::new(value)
 	}
 }

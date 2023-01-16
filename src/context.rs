@@ -18,6 +18,7 @@ pub struct Provider<'r> {
 	_ty: PhantomData<&'r dyn any::Any>,
 	parent: Option<&'r Provider<'r>>,
 	values: HashMap<NamedTypeId, ProviderEntry, FnvBuildHasher>,
+	is_exclusive: bool,
 }
 
 struct ProviderEntry {
@@ -74,6 +75,7 @@ impl<'r> Provider<'r> {
 			_ty: PhantomData,
 			parent: None,
 			values: HashMap::default(),
+			is_exclusive: true,
 		}
 	}
 
@@ -86,6 +88,7 @@ impl<'r> Provider<'r> {
 			_ty: PhantomData,
 			parent,
 			values: HashMap::default(),
+			is_exclusive: false,
 		}
 	}
 
@@ -94,6 +97,41 @@ impl<'r> Provider<'r> {
 		entries: T,
 	) -> Self {
 		Self::new_inherit(parent).with(entries)
+	}
+
+	pub fn new_inherit_exclusive_unchecked<'r2: 'r>(parent: Option<&'r Provider<'r>>) -> Self {
+		Self {
+			_ty: PhantomData,
+			parent,
+			values: HashMap::default(),
+			is_exclusive: true,
+		}
+	}
+
+	pub fn new_inherit_exclusive_unchecked_with<'r2: 'r, T: ProviderEntries<'r>>(
+		parent: Option<&'r Provider<'r>>,
+		entries: T,
+	) -> Self {
+		Self::new_inherit_exclusive_unchecked(parent).with(entries)
+	}
+
+	pub fn new_inherit_exclusive<'r2: 'r>(parent: Option<&mut ExclusiveProvider<'r2>>) -> Self {
+		Self::new_inherit_exclusive_unchecked(parent.map(|parent| parent.0))
+	}
+
+	pub fn new_inherit_exclusive_with<'r2: 'r, T: ProviderEntries<'r>>(
+		parent: Option<&mut ExclusiveProvider<'r2>>,
+		entries: T,
+	) -> Self {
+		Self::new_inherit_exclusive(parent).with(entries)
+	}
+
+	pub fn is_exclusive(&self) -> bool {
+		self.is_exclusive
+	}
+
+	pub fn as_exclusive(&mut self) -> ExclusiveProvider<'_> {
+		ExclusiveProvider::new(self)
 	}
 
 	pub fn sub_provider<'c: 'r>(&'c self) -> Provider<'c> {
@@ -212,24 +250,6 @@ impl<'r> Provider<'r> {
 	}
 }
 
-pub trait SpawnSubProvider {
-	fn sub_provider(&self) -> Provider<'_>;
-
-	fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c>;
-}
-
-impl<'a> SpawnSubProvider for Provider<'a> {
-	fn sub_provider(&self) -> Provider<'_> {
-		// Name resolution prioritizes inherent method of the same name.
-		self.sub_provider()
-	}
-
-	fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c> {
-		// Name resolution prioritizes inherent method of the same name.
-		self.sub_provider_with(entries)
-	}
-}
-
 // === Insertion helpers === //
 
 impl<'r> Provider<'r> {
@@ -327,44 +347,45 @@ impl<'provider, 'guard: 'borrow, 'borrow, T: ?Sized + 'static>
 	}
 }
 
-// === BypassClean === //
+// === BypassExclusivity === //
 
-pub trait BypassClean {}
+pub trait BypassExclusivity {}
 
-pub trait UnpackTargetBypassesClean {}
+pub trait UnpackTargetBypassesExclusivity {}
 
-impl<T: ?Sized + 'static + BypassClean> UnpackTargetBypassesClean for &'_ T {}
+impl<T: ?Sized + 'static + BypassExclusivity> UnpackTargetBypassesExclusivity for &'_ T {}
 
-impl<T: ?Sized + 'static + BypassClean> UnpackTargetBypassesClean for &'_ mut T {}
+impl<T: ?Sized + 'static + BypassExclusivity> UnpackTargetBypassesExclusivity for &'_ mut T {}
 
-// === CleanProvider === //
+// === ExclusiveProvider === //
 
-/// A `CleanProvider` is a new-typed [`Provider`] that encodes the assumption of being
+/// An `ExclusiveProvider` is a new-typed [`Provider`] that encodes the assumption of being
 /// entirely unborrowed into the type-system. In essence, they're like a mutable reference to
 /// a [`Provider`] with special escape-hatches to make them useful in practice.
 ///
-/// `CleanProviders` immutably dereference to [`Provider`]s meaning that, to actually
-/// benefit from the guarantee of cleanliness, you must typically pass a mutable reference to
-/// your `CleanProvider`. Transfer of ownership could also work well, although doing so would
+/// `ExclusiveProviders` immutably dereference to [`Provider`]s meaning that, to actually
+/// benefit from the guarantee of exclusivity, you must typically pass a mutable reference to
+/// your `ExclusiveProvider`. Transfer of ownership could also work well, although doing so would
 /// prevent you from reborrowing.
 ///
-/// Where `CleanProviders` shine is their two escape hatches:
+/// Where `ExclusiveProviders` shine is their two escape hatches:
 ///
-/// - [`CleanProvider::escape_safe`], which returns a [`SafeCleanProvider`] with a lifetime independent
-///   of the lifetime of the borrow. This `SafeCleanProvider` instance allows you to access components
-///   implementing the [`BypassClean`] trait. In other words, you can hold onto a `SafeCleanProvider`
-///   and borrow a select few components from it while you pass the `CleanProvider` instance to another
-///   method.
-///- [`CleanProvider::escape_unchecked`], which returns a [`Provider`] with a lifetime independent
-///  of the lifetime of the borrow. Once you do this, however, all bets are off! Be very careful
-///  about how you use this.
+/// - [`ExclusiveProvider::escape_safe`], which returns a [`BypassOnlyExclusiveProvider`] with a
+///   lifetime independent of the lifetime of the borrow. This `BypassOnlyExclusiveProvider` instance
+///   allows you to access components implementing the [`BypassExclusivity`] trait. In other words,
+///   you can hold onto a `BypassOnlyExclusiveProvider` and borrow a select few components from it
+///   while you pass the `ExclusiveProvider` instance to another method.
+///
+/// - [`ExclusiveProvider::escape_unchecked`], which returns a [`Provider`] with a lifetime independent
+///   of the lifetime of the borrow. Once you do this, however, all bets are off! Be very careful
+///   about how you use this.
 ///
 #[derive(Debug)]
-pub struct CleanProvider<'r>(&'r Provider<'r>);
+pub struct ExclusiveProvider<'r>(&'r Provider<'r>);
 
-impl<'r> CleanProvider<'r> {
+impl<'r> ExclusiveProvider<'r> {
 	pub fn new<'r2: 'r>(provider: &'r mut Provider<'r2>) -> Self {
-		assert!(provider.parent().is_none());
+		assert!(provider.is_exclusive());
 
 		Self::unchecked_new(provider)
 	}
@@ -377,16 +398,27 @@ impl<'r> CleanProvider<'r> {
 		self.0
 	}
 
-	pub fn escape_safe(&self) -> SafeCleanProvider<'r> {
-		SafeCleanProvider(self.0)
+	pub fn escape_safe(&self) -> BypassOnlyExclusiveProvider<'r> {
+		BypassOnlyExclusiveProvider(self.0)
 	}
 
 	pub fn escape_unchecked(&self) -> &'r Provider<'r> {
 		self.0
 	}
+
+	pub fn sub_provider_exclusive(&mut self) -> Provider<'_> {
+		Provider::new_inherit_exclusive(Some(self))
+	}
+
+	pub fn sub_provider_exclusive_with<'s, T: ProviderEntries<'s>>(
+		&'s mut self,
+		entries: T,
+	) -> Provider<'s> {
+		Provider::new_inherit_exclusive_with(Some(self), entries)
+	}
 }
 
-impl<'r> Deref for CleanProvider<'r> {
+impl<'r> Deref for ExclusiveProvider<'r> {
 	type Target = Provider<'r>;
 
 	fn deref(&self) -> &Self::Target {
@@ -395,9 +427,9 @@ impl<'r> Deref for CleanProvider<'r> {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct SafeCleanProvider<'r>(&'r Provider<'r>);
+pub struct BypassOnlyExclusiveProvider<'r>(&'r Provider<'r>);
 
-impl<'r> SafeCleanProvider<'r> {
+impl<'r> BypassOnlyExclusiveProvider<'r> {
 	pub fn unchecked_new(target: &'r Provider<'r>) -> Self {
 		Self(target)
 	}
@@ -407,15 +439,15 @@ impl<'r> SafeCleanProvider<'r> {
 	}
 }
 
-impl<'p, 'guard, 'borrow, T> UnpackTarget<'guard, 'borrow, SafeCleanProvider<'p>> for T
+impl<'p, 'guard, 'borrow, T> UnpackTarget<'guard, 'borrow, BypassOnlyExclusiveProvider<'p>> for T
 where
 	'guard: 'borrow,
-	T: UnpackTarget<'guard, 'borrow, Provider<'p>> + UnpackTargetBypassesClean,
+	T: UnpackTarget<'guard, 'borrow, Provider<'p>> + UnpackTargetBypassesExclusivity,
 {
 	type Guard = T::Guard;
 	type Reference = T::Reference;
 
-	fn acquire_guard(src: &'guard SafeCleanProvider<'p>) -> Self::Guard {
+	fn acquire_guard(src: &'guard BypassOnlyExclusiveProvider<'p>) -> Self::Guard {
 		T::acquire_guard(src.unchecked_raw())
 	}
 
@@ -487,20 +519,7 @@ macro_rules! unpack {
 	};
 }
 
-#[macro_export]
-macro_rules! provider_from_tuple {
-	($expr:expr) => {
-		$crate::Provider::new_with($crate::Context::reborrow(&mut $expr))
-	};
-	($parent:expr, $expr:expr) => {
-		$crate::context::SpawnSubProvider::sub_provider_with(
-			$parent,
-			$crate::Context::reborrow(&mut $expr),
-		)
-	};
-}
-
-pub use {provider_from_tuple, unpack};
+pub use unpack;
 
 // === Tuple context passing === //
 

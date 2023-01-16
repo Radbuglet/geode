@@ -17,7 +17,7 @@ use fnv::FnvBuildHasher;
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::{
-	context::{ProviderEntries, SpawnSubProvider},
+	context::ProviderEntries,
 	debug::{
 		label::{DebugLabel, ReifiedDebugLabel},
 		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
@@ -135,7 +135,7 @@ impl Universe {
 	{
 		self.add_archetype_meta::<ArchetypeEventQueueHandler<E>>(
 			id,
-			ArchetypeEventQueueHandler(TaskHandler::new(handler)),
+			ArchetypeEventQueueHandler(TaskHandler::new_regular(handler)),
 		);
 	}
 
@@ -312,18 +312,6 @@ impl Universe {
 
 			// (lifetime is killed implicitly on drop)
 		}
-	}
-}
-
-impl SpawnSubProvider for Universe {
-	fn sub_provider(&self) -> Provider<'_> {
-		// Name resolution prioritizes inherent method of the same name.
-		Provider::new_with(self)
-	}
-
-	fn sub_provider_with<'c, T: ProviderEntries<'c>>(&'c self, entries: T) -> Provider<'c> {
-		// Name resolution prioritizes inherent method of the same name.
-		self.sub_provider_with(entries)
 	}
 }
 
