@@ -37,8 +37,6 @@
   - [ ] Allow unlimited `Deref` chains.
   - [ ] Allow for opt-in increases to max arity.
 - [ ] Implement `Signal`.
-- [ ] Expose `WeakEntity` and `WeakArchetype`.
-- [ ] Implement `ArchetypeAnnotator`.
 
 ##### Publishing
 

@@ -148,8 +148,6 @@ let is_condemned = my_player.is_condemned();
 assert!(is_condemned == cfg!(debug_assertions));
 ```
 
-==TODO: Document `WeakEntity` and `WeakArchetype` when finalized.==
-
 ==TODO: Document bundles.==
 
 ### Universes
@@ -158,17 +156,22 @@ assert!(is_condemned == cfg!(debug_assertions));
 
 We can get away with this in Geode because, unlike a traditional ECS, Geode encourages you to define systems as regular functions receiving their context through their arguments. For example, instead of storing a timer as a resource so that game systems have access to it, the object in charge of handling that scene could pass the scene entity to its list of dependencies and let them acquire the timer from there. This ensures that, for example, we can create multiple scenes with multiple different timers in a given world without having to replace every instance of a timer resource with a timer component on a scene entity.
 
-Although the previous paragraph would suggest that all forms of global state are anti-patterns—encouraging a design where the `Universe` is omitted entirely—we still have good reason to make most `Storages` singletons. In putting all components of a given type into a single storage, it becomes trivial to access the component: just acquire the corresponding storage from the universe and index into it. Compare that to a multi-storage approach where there is no differentiation between a component being in a different storage or just not being there at all!
+Although the previous paragraph would suggest that all forms of global state are anti-patterns—encouraging a design where the `Universe` is omitted entirely—we still have good reason to make most `Storages` into singletons. In putting all components of a given type into a single storage, it becomes trivial to access the component: just acquire the corresponding storage from the universe and index into it. Compare that to a multi-storage approach where there is no differentiation between a component being in a different storage or just not being there at all!
 
 You get these benefits without losing opportunities for multi-threading thanks to the `ShardedStorage` wrapper, which allows you to access components from different archetypes concurrently on different threads so long as you can prove exclusive access to that archetype through a mutable reference.
+
+There is also the occasional argument for placing `Archetypes` into the `Universe`—usually convenience since there really isn't a good architectural argument for why putting them elsewhere can be harmful. Doing this, however, is quite rare and support is somewhat limited out of the box (e.g. you can't easily add metadata to the archetype in its constructor without going through a locked universe resource).
 
 But that's enough rambling! Here's how to use a `Universe` to access resources:
 
 ```rust
 use geode::{
     Universe,
-    BuildableResource,
-    BuildableResourceRw,
+    universe::{
+        BuildableArchetype,
+    	BuildableResource,
+    	BuildableResourceRw,
+    },
 };
 use std::time::Instant;
 
@@ -178,6 +181,44 @@ let mut universe = Universe::new();
 let mut positions = universe.storage_mut::<[f32; 3]>();
 let mut names = universe.storage_mut::<String>();
 let mut ai_goals = universe.storage_mut::<Option<Entity>>();
+
+// Accessing global archetypes is also quite easy. All you need
+// is a marker type.
+struct PlayerArchMarker;
+
+impl BuildableArchetype for PlayerArchMarker {
+    fn create(_universe: &Universe) -> Archetype<Self> {
+        Archetype::new("player archetype")
+    }
+}
+
+let mut players = universe.archetype_mut::<PlayerArchMarker>();
+let my_player = players.spawn("my player");
+
+// It is typical to use a bundle as the marker type.
+use geode::bundle;
+
+bundle! {
+    pub struct ZombieBundle {
+        pub position: [f32; 3],
+        ai_goal: Option<Entity>,
+    }
+}
+
+// Omitting the `create` method gives you a default `create` method that
+// produces a plain `Archetype` instance with the debug name set to the
+// type name of the bundle.
+impl BuildableArchetype for ZombieBundle {}
+
+let mut zombies = universe.archetype_mut::<ZombieBundle>();
+let my_zombie = players.spawn_with(
+    "my zombie",
+    (&mut positions, &mut ai_goals),
+	ZombieBundle {
+        position: [0.0, 1.0, 0.0],
+        ai_goal: Some(my_player),
+	},
+);
 
 // We can also access global resources, although this use-case is
 // far less frequent.
@@ -208,10 +249,6 @@ drop(counter);
 
 println!("The counter is now {}.", *universe.resource_ref::<Counter>)();
 ```
-
-#### Universe Archetypes
-
-==TODO: Either figure out how to add these in an efficient manner or explain here why they are an anti-pattern.==
 
 #### Exclusive Universes
 

@@ -1,4 +1,7 @@
-use std::{any::Any, ops::Deref};
+use std::{
+	any::{type_name, Any},
+	ops::Deref,
+};
 
 use fnv::FnvBuildHasher;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -89,13 +92,11 @@ impl Universe {
 		self.resource_mut()
 	}
 
-	pub fn archetype<M: ?Sized + BuildableArchetypeBundle>(&self) -> RwLockReadGuard<Archetype<M>> {
+	pub fn archetype<M: ?Sized + BuildableArchetype>(&self) -> RwLockReadGuard<Archetype<M>> {
 		self.resource_ref()
 	}
 
-	pub fn archetype_mut<M: ?Sized + BuildableArchetypeBundle>(
-		&self,
-	) -> RwLockWriteGuard<Archetype<M>> {
+	pub fn archetype_mut<M: ?Sized + BuildableArchetype>(&self) -> RwLockWriteGuard<Archetype<M>> {
 		self.resource_mut()
 	}
 
@@ -122,8 +123,11 @@ pub trait BuildableResourceRw: 'static + Sized + Send + Sync {
 	fn create(universe: &Universe) -> Self;
 }
 
-pub trait BuildableArchetypeBundle: 'static {
-	fn create(universe: &Universe) -> Archetype<Self>;
+pub trait BuildableArchetype: 'static {
+	fn create(universe: &Universe) -> Archetype<Self> {
+		let _ = universe;
+		Archetype::new(type_name::<Self>())
+	}
 }
 
 impl<T: BuildableResourceRw> BuildableResource for RwLock<T> {
@@ -132,7 +136,7 @@ impl<T: BuildableResourceRw> BuildableResource for RwLock<T> {
 	}
 }
 
-impl<M: ?Sized + BuildableArchetypeBundle> BuildableResourceRw for Archetype<M> {
+impl<M: ?Sized + BuildableArchetype> BuildableResourceRw for Archetype<M> {
 	fn create(universe: &Universe) -> Self {
 		M::create(universe)
 	}
@@ -240,14 +244,14 @@ impl<'r> ExclusiveUniverse<'r> {
 
 	pub fn bypass_archetype<M>(&self) -> RwLockReadGuard<Archetype<M>>
 	where
-		M: ?Sized + BuildableArchetypeBundle + BypassExclusivity,
+		M: ?Sized + BuildableArchetype + BypassExclusivity,
 	{
 		self.universe_dangerous().archetype()
 	}
 
 	pub fn bypass_archetype_mut<M>(&self) -> RwLockWriteGuard<Archetype<M>>
 	where
-		M: ?Sized + BuildableArchetypeBundle + BypassExclusivity,
+		M: ?Sized + BuildableArchetype + BypassExclusivity,
 	{
 		self.universe_dangerous().resource_mut()
 	}
