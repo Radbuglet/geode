@@ -1,22 +1,12 @@
 # Geode To-Do
 
-##### Universe
-
-- [x] Improve `compost`:
-  - [ ] Allow unlimited `Deref` chains.
-  - [ ] Allow for opt-in increases to max arity.
-  - [ ] Publish these features.
-- [ ] Implement `ArchetypeAnnotator`.
-
 ##### Entity Model
 
-- [ ] Expose `WeakEntity` and `WeakArchetype`.
+- [x] Singleton bundles.
 - [ ] Add support for late-initialized `bundle!` components.
 - [ ] Expose `Archetype::spawn_push`, `Archetype::spawn_in_slot`, and `Archetype::iter`.
-- [ ] Singleton bundles.
 - [ ] Allow `EventQueueIter` to be reiterated and polled on individual archetypes.
 - [ ] Implement `MappedStorage` and the `StorageView` trait.
-- [ ] Implement `Signal`.
 
 ##### Multi-Threading
 
@@ -28,7 +18,7 @@
 - [ ] Implement regular scheduling:
   - [ ] Implement `Scheduler`
   - [ ] Implement `AsyncProvider`
-  - [ ] Implement an `async` version of `unpack!`
+  - [ ] Implement an `async` version of `Universe`
   - [ ] Implement pool-based future executor
 
 ##### Debug
@@ -41,7 +31,17 @@
   - [ ] Warnings for other forms of misuse (e.g. not flushing the universe)
   - [ ] Better/more consistent messages for everything else
 
+##### Extensions
+
+- [x] Improve `compost`:
+  - [ ] Allow unlimited `Deref` chains.
+  - [ ] Allow for opt-in increases to max arity.
+- [ ] Implement `Signal`.
+- [ ] Expose `WeakEntity` and `WeakArchetype`.
+- [ ] Implement `ArchetypeAnnotator`.
+
 ##### Publishing
 
+- [ ] Publish a stable interface for `compost`.
 - [ ] Perform code review and write unit tests.
 - [ ] Document library and publish.

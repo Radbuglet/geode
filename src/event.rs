@@ -4,6 +4,7 @@ use std::{
 	collections::HashMap,
 	fmt, mem,
 	num::NonZeroU32,
+	ops::{Deref, DerefMut},
 	vec,
 };
 
@@ -210,6 +211,19 @@ impl<T> Drop for TaskQueue<T> {
 #[derive(Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Default)]
 pub struct OpaqueBox<T: ?Sized>(pub Box<T>);
 
+impl<T: ?Sized> OpaqueBox<T> {
+	pub fn new(v: T) -> Self
+	where
+		T: Sized,
+	{
+		Box::new(v).into()
+	}
+
+	pub fn from_box(b: Box<T>) -> Self {
+		b.into()
+	}
+}
+
 impl<T: ?Sized> fmt::Debug for OpaqueBox<T> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		f.debug_struct(format!("OpaqueBox<{}>", type_name::<T>()).as_str())
@@ -243,6 +257,20 @@ impl<T: ?Sized> Borrow<T> for OpaqueBox<T> {
 
 impl<T: ?Sized> BorrowMut<T> for OpaqueBox<T> {
 	fn borrow_mut(&mut self) -> &mut T {
+		&mut self.0
+	}
+}
+
+impl<T: ?Sized> Deref for OpaqueBox<T> {
+	type Target = T;
+
+	fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+
+impl<T: ?Sized> DerefMut for OpaqueBox<T> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
 		&mut self.0
 	}
 }

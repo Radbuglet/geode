@@ -4,12 +4,11 @@ A Scheduling-Flexible, Powerful ECS
 
 ## Overview
 
-There are four major components to Geode:
+There are three major components to Geode:
 
 - **Component Storages**, which provide mechanisms for creating entities, attaching components to them, and accessing those components through either random access or querying.
-- **Universes**, which provide mechanisms for automatically creating and accessing global state (e.g. storages and some archetypes), annotating archetypes with metadata, and scheduling tasks for execution with exclusive access to that global state.
-- **Providers and Context Tuples**, which provide mechanisms for efficiently and ergonomically passing context from one function to the next, even if the context required by the function is determined dynamically.
-- **Events**, which provide mechanisms for queueing up events on entities, defining debug-printable lazily-boxed function handlers, and scheduling function graphs with state dependencies for concurrent execution.
+- **Universes**, which provide mechanisms for automatically creating and accessing global state (e.g. storages and some archetypes) and passing that state around.
+- **Events**, which provide mechanisms for queueing up events on entities, connecting signals, defining debug-printable closures, and scheduling function graphs with state dependencies for concurrent execution.
 
 ### Component Storages
 
@@ -151,25 +150,115 @@ assert!(is_condemned == cfg!(debug_assertions));
 
 ==TODO: Document `WeakEntity` and `WeakArchetype` when finalized.==
 
+==TODO: Document bundles.==
+
 ### Universes
 
-**Universes**, like *worlds* in traditional entity-component-systems, are a store of global state. However, unlike ECS worlds, universes typically only store `Storage`s and `Archetype`s—that's it! It is very rare, although it is allowed, to store global state in the same way that you would store singletons as resources in an ECS world.
+**Universes**, like *worlds* in traditional entity-component-systems, are a store of global state. However, unlike ECS worlds, universes typically only store `Storage`—that's it! It is very rare, although it is allowed, to store global state in the same way that you would store singletons as resources in an ECS world.
 
-We can get away with this in Geode because, unlike a traditional ECS, Geode encourages you to define systems as regular functions receiving their context through their arguments. For example, instead of storing a timer as a resource so that game systems have access to it, the object in charge of handling that scene could pass the entire scene context to its list of dependencies. This ensures that, for example, we can create multiple scenes in a given world without having to replace every instance of a timer resource with a timer component on a scene entity. The mechanisms that make this type of context-passing possible is described in the [providers and context tuples](#providers-and-context-tuples) section.
+We can get away with this in Geode because, unlike a traditional ECS, Geode encourages you to define systems as regular functions receiving their context through their arguments. For example, instead of storing a timer as a resource so that game systems have access to it, the object in charge of handling that scene could pass the scene entity to its list of dependencies and let them acquire the timer from there. This ensures that, for example, we can create multiple scenes with multiple different timers in a given world without having to replace every instance of a timer resource with a timer component on a scene entity.
 
-Although the previous paragraph would suggest that all forms of global state are anti-patterns, encouraging a design where the `Universe` is omitted entirely, we have good reason to put make most `Storages` and some `Archetypes` singletons. ==TODO==
+Although the previous paragraph would suggest that all forms of global state are anti-patterns—encouraging a design where the `Universe` is omitted entirely—we still have good reason to make most `Storages` singletons. In putting all components of a given type into a single storage, it becomes trivial to access the component: just acquire the corresponding storage from the universe and index into it. Compare that to a multi-storage approach where there is no differentiation between a component being in a different storage or just not being there at all!
 
-Enough rambling! Here's how to use a `Universe`:
+You get these benefits without losing opportunities for multi-threading thanks to the `ShardedStorage` wrapper, which allows you to access components from different archetypes concurrently on different threads so long as you can prove exclusive access to that archetype through a mutable reference.
+
+But that's enough rambling! Here's how to use a `Universe` to access resources:
 
 ```rust
-// TODO
+use geode::{
+    Universe,
+    BuildableResource,
+    BuildableResourceRw,
+};
+use std::time::Instant;
+
+let mut universe = Universe::new();
+
+// Accessing storages is easy!
+let mut positions = universe.storage_mut::<[f32; 3]>();
+let mut names = universe.storage_mut::<String>();
+let mut ai_goals = universe.storage_mut::<Option<Entity>>();
+
+// We can also access global resources, although this use-case is
+// far less frequent.
+struct AppStart(pub Instant);
+
+impl BuildableResource for AppStart {
+    fn create(_universe: &Universe) -> Self {
+        Self(Instant::now())
+    }
+}
+
+let app_start = universe.resource::<AppStart>();
+
+// Read-write components are also supported. These are equivalent to
+// calling `universe.resource::<RwLock<T>>().try_lock_xxx().unwrap()`.
+struct Counter(pub u32);
+
+impl BuildableResourceRw for Counter {
+    fn create(_universe: &Universe) -> Self {
+        Self(0)
+    }
+}
+
+let mut counter = universe.resource_mut::<Counter>();
+*counter += 1;
+
+drop(counter);
+
+println!("The counter is now {}.", *universe.resource_ref::<Counter>)();
 ```
 
-==TODO==
+#### Universe Archetypes
 
-### Providers and Context Tuples
+==TODO: Either figure out how to add these in an efficient manner or explain here why they are an anti-pattern.==
 
-Providers and context tuples standardize the way in which we pass context to functions.
+#### Exclusive Universes
+
+When passing the `Universe` around—especially when passing it to dynamically dispatched function handlers—it can be pretty tricky to keep track of which resources have been borrowed already. Luckily, Geode provides a useful wrapper around `Universes` to make them much safer without compromising too much of their flexibility.
+
+`ExclusiveUniverse<'r>` is a wrapper around a `&'r Universe` that asserts that it is the only such reference to that `Universe`. Methods expecting exclusive access over the `Universe` and all of its components can request a `&mut ExclusiveUniverse`. These behave almost exactly like references to a `Universe` and, indeed, `ExclusiveUniverse` immutably dereferences to a `Universe`. `ExclusiveUniverse` differentiates itself from a `&mut Universe`, however, by the way in which they allow carefully-selected carveouts for bypassing this exclusivity.
+
+For example, say you want to have a game scene call into a bunch of entity processing systems. Ideally, you'd want to give these systems an `&mut ExclusiveUniverse`. However, to access these closures, you need access to the scene's corresponding `GameSceneState`. It's pretty obvious that those systems won't try to access that component so, ideally, this should be made safe to borrow.
+
+And, indeed, it can be. Any resource, storage component, or archetype bundle for which it should be safe to bypass this exclusivity restriction can implement the `BypassExclusivity` trait. This allows you to call the special `bypass_xxx` methods, which return references in such a way that you can still pass a `&mut ExclusiveUniverse<'r>` along while still holding on to them.
+
+```rust
+use geode::{ExclusiveUniverse, BypassExclusivity, OpaqueBox};
+
+struct SomeEngineService {
+    // ...
+}
+
+struct PlaySceneState {
+    systems: Vec<OpaqueBox<dyn FnMut(&mut BypassExclusivity)>>,
+}
+
+impl BypassExclusivity for PlaySceneState {}
+
+fn process_scene(universe: &mut ExclusiveUniverse, engine: Entity, scene: Entity) {
+    // You can use the `Universe`'s regular borrowing methods to borrow
+    // non-`BypassExclusivity` components...
+    {
+    	let mut my_service = &mut universe.storage_mut::<SomeEngineService>()[engine];
+        my_service.do_something();
+        // Note, however, that this borrow must be dropped before reborrowing
+        // `ExclusiveUniverse` mutably again.
+    }
+    
+    // You can use the `Universe`'s `bypass_xxx` methods to bypass the exclusivity
+    // constraint.
+    let mut scene_state = &mut universe.storage_mut::<PlaySceneState>()[scene];
+    
+    for system in &mut scene_state.systems {
+        // Notice how we can keep on borrowing `scene_state` while passing
+        // a `&mut ExclusiveUniverse` reference?
+        system(&mut *universe);
+    }
+}
+```
+
+#### Context Tuples
 
 ==TODO==
 

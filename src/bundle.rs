@@ -1,4 +1,19 @@
-use crate::Entity;
+use crate::{Entity, Storage};
+
+#[derive(Debug, Copy, Clone, Default)]
+pub struct SingletonBundle<T>(pub T);
+
+impl<T: 'static> Bundle for SingletonBundle<T> {
+	type Context<'a> = &'a mut Storage<T>;
+
+	fn attach(self, storage: Self::Context<'_>, target: Entity) {
+		storage.add(target, self.0);
+	}
+
+	fn detach(storage: Self::Context<'_>, target: Entity) -> Self {
+		Self(storage.try_remove(target).unwrap())
+	}
+}
 
 pub trait Bundle: Sized {
 	type Context<'a>;

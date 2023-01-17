@@ -85,18 +85,6 @@ impl LifetimeLike for Entity {
 	}
 }
 
-// === Maps === //
-
-pub mod hashers {
-	pub use crate::util::no_hash::NoOpBuildHasher as ArchetypeBuildHasher;
-	pub use fnv::FnvBuildHasher as EntityBuildHasher;
-}
-
-pub type ArchetypeMap<V> = HashMap<Dependent<ArchetypeId>, V, hashers::ArchetypeBuildHasher>;
-pub type ArchetypeSet = HashSet<Dependent<ArchetypeId>, hashers::ArchetypeBuildHasher>;
-pub type EntityMap<V> = HashMap<Dependent<ArchetypeId>, V, hashers::EntityBuildHasher>;
-pub type EntitySet = HashSet<Dependent<ArchetypeId>, hashers::EntityBuildHasher>;
-
 // === Archetype === //
 
 static ARCH_ID_FREE_LIST: Mutex<Option<RandIdGen>> = Mutex::new(None);
@@ -241,6 +229,20 @@ impl<M: ?Sized> Drop for Archetype<M> {
 			.dealloc(self.id);
 	}
 }
+
+// === Maps === //
+
+pub mod hashers {
+	pub use crate::util::no_hash::NoOpBuildHasher as ArchetypeBuildHasher;
+	pub use fnv::FnvBuildHasher as EntityBuildHasher;
+}
+
+pub type ArchetypeMap<V> = HashMap<Dependent<ArchetypeId>, V, hashers::ArchetypeBuildHasher>;
+pub type ArchetypeSet = HashSet<Dependent<ArchetypeId>, hashers::ArchetypeBuildHasher>;
+pub type EntityMap<V> = HashMap<Dependent<ArchetypeId>, V, hashers::EntityBuildHasher>;
+pub type EntitySet = HashSet<Dependent<ArchetypeId>, hashers::EntityBuildHasher>;
+
+// === Tests === //
 
 #[cfg(test)]
 mod tests {

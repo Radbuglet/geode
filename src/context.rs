@@ -22,6 +22,12 @@ impl Universe {
 		Self::default()
 	}
 
+	pub fn as_exclusive(&mut self) -> ExclusiveUniverse<'_> {
+		ExclusiveUniverse::new(self)
+	}
+
+	// === Primitive accessors === //
+
 	pub fn init_resource<T: 'static + Send + Sync>(&self, value: T) -> &T {
 		self.resources
 			.add(NamedTypeId::of::<T>(), Box::new(value))
@@ -30,6 +36,7 @@ impl Universe {
 	}
 
 	pub fn unload_resource<T: 'static>(&mut self) -> Option<Box<T>> {
+		self.flush();
 		self.resources
 			.remove(&NamedTypeId::of::<T>())
 			.map(|v| v.downcast().ok().unwrap())
@@ -59,6 +66,8 @@ impl Universe {
 	pub fn resource<T: BuildableResource>(&self) -> &T {
 		self.resource_or_init(|| T::create(self))
 	}
+
+	// === Accessor aliases === //
 
 	pub fn resource_rw<T: BuildableResourceRw>(&self) -> &RwLock<T> {
 		self.resource()
@@ -90,9 +99,7 @@ impl Universe {
 		self.resource_mut()
 	}
 
-	pub fn as_exclusive(&mut self) -> ExclusiveUniverse<'_> {
-		ExclusiveUniverse::new(self)
-	}
+	// === Flushing === //
 
 	pub fn add_flush_task(&self, task: OpaqueBox<dyn FnMut(&mut ExclusiveUniverse)>) {
 		self.flush_tasks.lock().push(task);
@@ -102,7 +109,7 @@ impl Universe {
 		self.resources.flush();
 
 		while let Some(mut task) = self.flush_tasks.get_mut().next_task() {
-			(task.0)(&mut self.as_exclusive())
+			task(&mut self.as_exclusive());
 		}
 	}
 }
