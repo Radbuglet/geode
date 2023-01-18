@@ -6,7 +6,20 @@
 - [ ] Add support for late-initialized `bundle!` components.
 - [ ] Expose `Archetype::spawn_push`, `Archetype::spawn_in_slot`, and `Archetype::iter`.
 - [ ] Allow `EventQueueIter` to be reiterated and polled on individual archetypes.
-- [ ] Implement `MappedStorage` and the `StorageView` trait.
+- [ ] Implement a universe-friendly `ArchetypeMap`.
+
+##### Convenience Extensions
+
+- [x] Improve `compost`:
+  - [ ] Allow unlimited `Deref` chains.
+  - [ ] Allow for opt-in increases to max arity.
+- [ ] Implement some common utils:
+  - [x] Mechanisms to make writing delegates easier (e.g. a `func!` macro)
+  - [ ] Method conversions in `func`
+  - [ ] Ability to take `func` objects statically.
+  - [ ] A standard `DestructionHandler` trait.
+- [ ] Implement `MappedStorage` and `StorageView` traits.
+- [ ] Implement `EntityMap` and `ArchetypeMap`.
 
 ##### Multi-Threading
 
@@ -30,19 +43,6 @@
   - [ ] Log backtraces on error
   - [ ] Warnings for other forms of misuse (e.g. not flushing the universe)
   - [ ] Better/more consistent messages for everything else
-
-##### Future Extensions
-
-- [x] Improve `compost`:
-  - [ ] Allow unlimited `Deref` chains.
-  - [ ] Allow for opt-in increases to max arity.
-- [ ] Implement proper universe archetype annotations.
-- [ ] Implement proper `EntityMap` and `ArchetypeMaps`.
-- [ ] Implement some common utils:
-  - [x] Mechanisms to make writing delegates easier (e.g. a `func!` macro)
-  - [ ] A standard `DestructionHandler` trait
-  - [ ] A `Signal` object
-  - [ ] Method conversions in `func`
 
 ##### Publishing
 

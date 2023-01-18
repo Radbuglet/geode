@@ -213,12 +213,76 @@ pub mod macro_internal {
 	};
 }
 
+// pub trait FuncMethodInject<I> {
+// 	const INJECTOR: I;
+// }
+
 #[macro_export]
 macro_rules! func {
+// 	(
+// 		$(#[$attr_meta:meta])*
+// 		$vis:vis fn $name:ident
+// 			$(
+// 				<$($generic:ident),* $(,)?>
+// 				$(<$($fn_lt:lifetime),* $(,)?>)?
+// 			)?
+// 			(
+// 				self [$($inj_para:ty),* $(,)?]
+// 				$(, $para:ty)* $(,)?
+// 			)
+// 		$(where $($where_token:tt)*)?
+// 	) => {
+// 		$crate::func! {
+// 			$(#[$attr_meta])*
+// 			$vis fn $name
+// 				< $($($generic),*)? >
+// 				< 'injected, $($($($fn_lt),*)?)? >
+// 				(
+// 					$($inj_para,)*
+// 					$($para,)*
+// 				)
+// 			$(where $($where_token)*)?
+// 		}
+//
+// 		impl$(<$($generic),*>)? $name $(<$($generic),*>)?
+// 		$(where
+// 			$($where_token)*
+// 		)? {
+// 			pub fn new_method_mut<__Receiver, __Func>(handler: __Func) -> Self
+// 			where
+// 				__Receiver: ?Sized + $crate::event::FuncMethodInject<
+// 					for<
+// 						'injected
+// 						$($(
+// 							$(,$fn_lt)*
+// 						)?)?
+// 					> fn(
+// 						$(&mut $inj_para),*
+// 					) -> $crate::parking_lot::MappedRwLockWriteGuard<'injected, __Receiver>,
+// 				>,
+// 				__Func: 'static + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync +
+// 					for<
+// 						'injected
+// 						$($(
+// 							$(,$fn_lt)*
+// 						)?)?
+// 					> Fn(
+// 						__Receiver,
+// 						$($inj_para,)*
+// 						$($para,)*
+// 					),
+// 			{
+// 				todo!()
+// 			}
+// 		}
+// 	};
 	(
 		$(#[$attr_meta:meta])*
 		$vis:vis fn $name:ident
-			$(<$($generic:ident),* $(,)?>)?
+			$(
+				<$($generic:ident),* $(,)?>
+				$(<$($fn_lt:lifetime),* $(,)?>)?
+			)?
 			($($para:ty),* $(,)?)
 		$(where $($where_token:tt)*)?
 	) => {
@@ -228,16 +292,22 @@ macro_rules! func {
 			$($where_token)*
 		)? {
 			// TODO: Optimize the internal representation to avoid allocations for context-less handlers.
-			handler: $crate::event::macro_internal::Arc<dyn Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync>,
+			handler: $crate::event::macro_internal::Arc<
+				dyn
+					$($(for<$($fn_lt),*>)?)?
+					Fn($($para),*) +
+						$crate::event::macro_internal::Send +
+						$crate::event::macro_internal::Sync
+			>,
 		}
 
 		impl$(<$($generic),*>)? $name $(<$($generic),*>)?
 		$(where
 			$($where_token)*
 		)? {
-			pub fn new<__Func: >(handler: __Func) -> Self
+			pub fn new<__Func>(handler: __Func) -> Self
 			where
-				__Func: 'static + Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync,
+				__Func: 'static + $($(for<$($fn_lt),*>)?)? Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync,
 			{
 				Self {
 					handler: $crate::event::macro_internal::Arc::new(handler),
@@ -245,7 +315,14 @@ macro_rules! func {
 			}
 		}
 
-		impl<__Func: 'static + Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync$(, $($generic),*)?> $crate::event::macro_internal::From<__Func> for $name $(<$($generic),*>)?
+		impl<
+			__Func:
+				'static +
+					$($(for<$($fn_lt),*>)?)? Fn($($para),*) +
+					$crate::event::macro_internal::Send +
+					$crate::event::macro_internal::Sync
+			$(, $($generic),*)?
+		> $crate::event::macro_internal::From<__Func> for $name $(<$($generic),*>)?
 		$(where
 			$($where_token)*
 		)? {
@@ -258,7 +335,10 @@ macro_rules! func {
 		$(where
 			$($where_token)*
 		)? {
-			type Target = dyn Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync;
+			type Target = dyn
+				$($(for<$($fn_lt),*>)?)? Fn($($para),*) +
+				$crate::event::macro_internal::Send +
+				$crate::event::macro_internal::Sync;
 
 			fn deref(&self) -> &Self::Target {
 				&*self.handler
