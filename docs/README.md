@@ -282,11 +282,11 @@ fn process_scene(universe: &mut ExclusiveUniverse, engine: Entity, scene: Entity
         // Note, however, that this borrow must be dropped before reborrowing
         // `ExclusiveUniverse` mutably again.
     }
-    
+
     // You can use the `Universe`'s `bypass_xxx` methods to bypass the exclusivity
     // constraint.
     let mut scene_state = &mut universe.storage_mut::<PlaySceneState>()[scene];
-    
+
     for system in &mut scene_state.systems {
         // Notice how we can keep on borrowing `scene_state` while passing
         // a `&mut ExclusiveUniverse` reference?

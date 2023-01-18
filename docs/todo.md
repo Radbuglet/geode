@@ -31,12 +31,13 @@
   - [ ] Warnings for other forms of misuse (e.g. not flushing the universe)
   - [ ] Better/more consistent messages for everything else
 
-##### Extensions
+##### Future Extensions
 
 - [x] Improve `compost`:
   - [ ] Allow unlimited `Deref` chains.
   - [ ] Allow for opt-in increases to max arity.
-- [ ] Implement `Signal`.
+- [ ] Implement proper universe annotations
+- [ ] Implement proper `EntityMap` and `ArchetypeMaps`
 
 ##### Publishing
 

@@ -9,15 +9,18 @@ pub mod storage;
 pub mod universe;
 mod util;
 
+pub use {compost, parking_lot};
+
 pub mod prelude {
 	pub use crate::{
 		bundle::{bundle, Bundle},
+		compost::{decompose, Context},
 		debug::{label::NO_LABEL, lifetime::Dependent},
 		entity::{Archetype, ArchetypeId, Entity},
 		event::{DestroyQueue, EntityDestroyEvent, EventQueue, EventQueueIter, OpaqueBox},
 		query::Query,
 		storage::Storage,
-		universe::{decompose, BypassExclusivity, Context, ExclusiveUniverse, Universe},
+		universe::{BypassExclusivity, ExclusiveUniverse, Universe},
 	};
 }
 

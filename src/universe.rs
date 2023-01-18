@@ -178,14 +178,14 @@ impl<'r> ExclusiveUniverse<'r> {
 	}
 
 	// Bypasses
-	pub fn bypass_try_resource<T>(&self) -> Option<&T>
+	pub fn bypass_try_resource<T>(&self) -> Option<&'r T>
 	where
 		T: 'static + BypassExclusivity,
 	{
 		self.universe_dangerous().try_resource()
 	}
 
-	pub fn bypass_resource_or_init<T, F>(&self, init: F) -> &T
+	pub fn bypass_resource_or_init<T, F>(&self, init: F) -> &'r T
 	where
 		T: 'static + Send + Sync + BypassExclusivity,
 		F: FnOnce() -> T,
@@ -193,63 +193,63 @@ impl<'r> ExclusiveUniverse<'r> {
 		self.universe_dangerous().resource_or_init(init)
 	}
 
-	pub fn bypass_resource_or_panic<T>(&self) -> &T
+	pub fn bypass_resource_or_panic<T>(&self) -> &'r T
 	where
 		T: 'static + BypassExclusivity,
 	{
 		self.universe_dangerous().resource_or_panic()
 	}
 
-	pub fn bypass_resource<T>(&self) -> &T
+	pub fn bypass_resource<T>(&self) -> &'r T
 	where
 		T: BuildableResource + BypassExclusivity,
 	{
 		self.universe_dangerous().resource()
 	}
 
-	pub fn bypass_resource_rw<T>(&self) -> &RwLock<T>
+	pub fn bypass_resource_rw<T>(&self) -> &'r RwLock<T>
 	where
 		T: BuildableResourceRw + BypassExclusivity,
 	{
 		self.universe_dangerous().resource_rw()
 	}
 
-	pub fn bypass_resource_ref<T>(&self) -> RwLockReadGuard<T>
+	pub fn bypass_resource_ref<T>(&self) -> RwLockReadGuard<'r, T>
 	where
 		T: BuildableResourceRw + BypassExclusivity,
 	{
 		self.universe_dangerous().resource_ref()
 	}
 
-	pub fn bypass_resource_mut<T>(&self) -> RwLockWriteGuard<T>
+	pub fn bypass_resource_mut<T>(&self) -> RwLockWriteGuard<'r, T>
 	where
 		T: BuildableResourceRw + BypassExclusivity,
 	{
 		self.universe_dangerous().resource_mut()
 	}
 
-	pub fn bypass_storage<T>(&self) -> RwLockReadGuard<Storage<T>>
+	pub fn bypass_storage<T>(&self) -> RwLockReadGuard<'r, Storage<T>>
 	where
 		T: 'static + Send + Sync + BypassExclusivity,
 	{
 		self.universe_dangerous().storage()
 	}
 
-	pub fn bypass_storage_mut<T>(&self) -> RwLockWriteGuard<Storage<T>>
+	pub fn bypass_storage_mut<T>(&self) -> RwLockWriteGuard<'r, Storage<T>>
 	where
 		T: 'static + Send + Sync + BypassExclusivity,
 	{
 		self.universe_dangerous().storage_mut()
 	}
 
-	pub fn bypass_archetype<M>(&self) -> RwLockReadGuard<Archetype<M>>
+	pub fn bypass_archetype<M>(&self) -> RwLockReadGuard<'r, Archetype<M>>
 	where
 		M: ?Sized + BuildableArchetype + BypassExclusivity,
 	{
 		self.universe_dangerous().archetype()
 	}
 
-	pub fn bypass_archetype_mut<M>(&self) -> RwLockWriteGuard<Archetype<M>>
+	pub fn bypass_archetype_mut<M>(&self) -> RwLockWriteGuard<'r, Archetype<M>>
 	where
 		M: ?Sized + BuildableArchetype + BypassExclusivity,
 	{
@@ -274,7 +274,3 @@ impl<T: ?Sized + BypassExclusivity> BypassExclusivity for RwLock<T> {}
 impl<T: BypassExclusivity> BypassExclusivity for Storage<T> {}
 
 impl<T: ?Sized + BypassExclusivity> BypassExclusivity for Archetype<T> {}
-
-// === Compost === //
-
-pub use compost::{decompose, Context};
