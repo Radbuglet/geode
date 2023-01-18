@@ -4,12 +4,15 @@ use std::{
 };
 
 use fnv::FnvBuildHasher;
-use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use parking_lot::{
+	MappedRwLockReadGuard, MappedRwLockWriteGuard, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
+};
 
 use crate::{
 	event::TaskQueue,
+	func,
 	util::{eventual_map::EventualMap, type_id::NamedTypeId},
-	Archetype, OpaqueBox, Storage,
+	Archetype, Entity, Storage,
 };
 
 // === Universe === //
@@ -17,7 +20,7 @@ use crate::{
 #[derive(Debug, Default)]
 pub struct Universe {
 	resources: EventualMap<NamedTypeId, dyn Any + Send + Sync, FnvBuildHasher>,
-	flush_tasks: Mutex<TaskQueue<OpaqueBox<dyn FnMut(&mut ExclusiveUniverse)>>>,
+	flush_tasks: Mutex<TaskQueue<UniverseFlushTask>>,
 }
 
 impl Universe {
@@ -92,6 +95,14 @@ impl Universe {
 		self.resource_mut()
 	}
 
+	pub fn comp<T: 'static + Send + Sync>(&self, target: Entity) -> MappedRwLockReadGuard<T> {
+		RwLockReadGuard::map(self.storage(), |storage| &storage[target])
+	}
+
+	pub fn comp_mut<T: 'static + Send + Sync>(&self, target: Entity) -> MappedRwLockWriteGuard<T> {
+		RwLockWriteGuard::map(self.storage_mut(), |storage| &mut storage[target])
+	}
+
 	pub fn archetype<M: ?Sized + BuildableArchetype>(&self) -> RwLockReadGuard<Archetype<M>> {
 		self.resource_ref()
 	}
@@ -102,15 +113,15 @@ impl Universe {
 
 	// === Flushing === //
 
-	pub fn add_flush_task(&self, task: OpaqueBox<dyn FnMut(&mut ExclusiveUniverse)>) {
+	pub fn add_flush_task(&self, task: UniverseFlushTask) {
 		self.flush_tasks.lock().push(task);
 	}
 
 	pub fn flush(&mut self) {
 		self.resources.flush();
 
-		while let Some(mut task) = self.flush_tasks.get_mut().next_task() {
-			task(&mut self.as_exclusive());
+		while let Some(handle_task) = self.flush_tasks.get_mut().next_task() {
+			handle_task(&mut self.as_exclusive());
 		}
 	}
 }
@@ -146,6 +157,10 @@ impl<T: 'static + Send + Sync> BuildableResourceRw for Storage<T> {
 	fn create(_universe: &Universe) -> Self {
 		Storage::new()
 	}
+}
+
+func! {
+	pub fn UniverseFlushTask(&mut ExclusiveUniverse)
 }
 
 // === ExclusiveUniverse === //
@@ -240,6 +255,20 @@ impl<'r> ExclusiveUniverse<'r> {
 		T: 'static + Send + Sync + BypassExclusivity,
 	{
 		self.universe_dangerous().storage_mut()
+	}
+
+	pub fn bypass_comp<T>(&self, target: Entity) -> MappedRwLockReadGuard<'r, T>
+	where
+		T: 'static + Send + Sync + BypassExclusivity,
+	{
+		self.universe_dangerous().comp(target)
+	}
+
+	pub fn bypass_comp_mut<T>(&self, target: Entity) -> MappedRwLockWriteGuard<'r, T>
+	where
+		T: 'static + Send + Sync + BypassExclusivity,
+	{
+		self.universe_dangerous().comp_mut(target)
 	}
 
 	pub fn bypass_archetype<M>(&self) -> RwLockReadGuard<'r, Archetype<M>>

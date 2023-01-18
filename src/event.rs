@@ -1,12 +1,4 @@
-use std::{
-	any::type_name,
-	borrow::{Borrow, BorrowMut},
-	collections::HashMap,
-	fmt, mem,
-	num::NonZeroU32,
-	ops::{Deref, DerefMut},
-	vec,
-};
+use std::{any::type_name, collections::HashMap, mem, num::NonZeroU32, vec};
 
 use derive_where::derive_where;
 
@@ -206,71 +198,101 @@ impl<T> Drop for TaskQueue<T> {
 	}
 }
 
-// === OpaqueBox === //
+// === `func!` macro === //
 
-#[derive(Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Default)]
-pub struct OpaqueBox<T: ?Sized>(pub Box<T>);
-
-impl<T: ?Sized> OpaqueBox<T> {
-	pub fn new(v: T) -> Self
-	where
-		T: Sized,
-	{
-		Box::new(v).into()
-	}
-
-	pub fn from_box(b: Box<T>) -> Self {
-		b.into()
-	}
+#[doc(hidden)]
+pub mod macro_internal {
+	pub use std::{
+		clone::Clone,
+		convert::From,
+		fmt,
+		marker::{Send, Sync},
+		ops::Deref,
+		stringify,
+		sync::Arc,
+	};
 }
 
-impl<T: ?Sized> fmt::Debug for OpaqueBox<T> {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.debug_struct(format!("OpaqueBox<{}>", type_name::<T>()).as_str())
-			.finish_non_exhaustive()
-	}
+#[macro_export]
+macro_rules! func {
+	(
+		$(#[$attr_meta:meta])*
+		$vis:vis fn $name:ident
+			$(<$($generic:ident),* $(,)?>)?
+			($($para:ty),* $(,)?)
+		$(where $($where_token:tt)*)?
+	) => {
+		$(#[$attr_meta])*
+		$vis struct $name $(<$($generic),*>)?
+		$(where
+			$($where_token)*
+		)? {
+			// TODO: Optimize the internal representation to avoid allocations for context-less handlers.
+			handler: $crate::event::macro_internal::Arc<dyn Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync>,
+		}
+
+		impl$(<$($generic),*>)? $name $(<$($generic),*>)?
+		$(where
+			$($where_token)*
+		)? {
+			pub fn new<__Func: >(handler: __Func) -> Self
+			where
+				__Func: 'static + Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync,
+			{
+				Self {
+					handler: $crate::event::macro_internal::Arc::new(handler),
+				}
+			}
+		}
+
+		impl<__Func: 'static + Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync$(, $($generic),*)?> $crate::event::macro_internal::From<__Func> for $name $(<$($generic),*>)?
+		$(where
+			$($where_token)*
+		)? {
+			fn from(handler: __Func) -> Self {
+				Self::new(handler)
+			}
+		}
+
+		impl$(<$($generic),*>)? $crate::event::macro_internal::Deref for $name $(<$($generic),*>)?
+		$(where
+			$($where_token)*
+		)? {
+			type Target = dyn Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync;
+
+			fn deref(&self) -> &Self::Target {
+				&*self.handler
+			}
+		}
+
+		impl$(<$($generic),*>)? $crate::event::macro_internal::fmt::Debug for $name $(<$($generic),*>)?
+		$(where
+			$($where_token)*
+		)? {
+			fn fmt(&self, fmt: &mut $crate::event::macro_internal::fmt::Formatter) -> $crate::event::macro_internal::fmt::Result {
+				fmt.write_str("func!::")?;
+				fmt.write_str($crate::event::macro_internal::stringify!($name))?;
+				fmt.write_str("(")?;
+				$(
+					fmt.write_str($crate::event::macro_internal::stringify!($para))?;
+				)*
+				fmt.write_str(")")?;
+
+				Ok(())
+			}
+		}
+
+		impl$(<$($generic),*>)? $crate::event::macro_internal::Clone for $name $(<$($generic),*>)?
+		$(where
+			$($where_token)*
+		)? {
+			fn clone(&self) -> Self {
+				Self {
+					handler: $crate::event::macro_internal::Clone::clone(&self.handler),
+				}
+			}
+		}
+	};
 }
 
-impl<T: ?Sized> From<Box<T>> for OpaqueBox<T> {
-	fn from(value: Box<T>) -> Self {
-		Self(value)
-	}
-}
-
-impl<T: ?Sized> Borrow<Box<T>> for OpaqueBox<T> {
-	fn borrow(&self) -> &Box<T> {
-		&self.0
-	}
-}
-
-impl<T: ?Sized> BorrowMut<Box<T>> for OpaqueBox<T> {
-	fn borrow_mut(&mut self) -> &mut Box<T> {
-		&mut self.0
-	}
-}
-
-impl<T: ?Sized> Borrow<T> for OpaqueBox<T> {
-	fn borrow(&self) -> &T {
-		&self.0
-	}
-}
-
-impl<T: ?Sized> BorrowMut<T> for OpaqueBox<T> {
-	fn borrow_mut(&mut self) -> &mut T {
-		&mut self.0
-	}
-}
-
-impl<T: ?Sized> Deref for OpaqueBox<T> {
-	type Target = T;
-
-	fn deref(&self) -> &Self::Target {
-		&self.0
-	}
-}
-
-impl<T: ?Sized> DerefMut for OpaqueBox<T> {
-	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut self.0
-	}
-}
+pub use func;

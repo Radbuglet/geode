@@ -36,8 +36,13 @@
 - [x] Improve `compost`:
   - [ ] Allow unlimited `Deref` chains.
   - [ ] Allow for opt-in increases to max arity.
-- [ ] Implement proper universe annotations
-- [ ] Implement proper `EntityMap` and `ArchetypeMaps`
+- [ ] Implement proper universe archetype annotations.
+- [ ] Implement proper `EntityMap` and `ArchetypeMaps`.
+- [ ] Implement some common utils:
+  - [x] Mechanisms to make writing delegates easier (e.g. a `func!` macro)
+  - [ ] A standard `DestructionHandler` trait
+  - [ ] A `Signal` object
+  - [ ] Method conversions in `func`
 
 ##### Publishing
 
