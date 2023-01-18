@@ -1,11 +1,18 @@
-use std::{any::type_name, collections::HashMap, mem, num::NonZeroU32, ops::DerefMut, vec};
+use std::{
+	any::type_name,
+	collections::HashMap,
+	mem,
+	num::NonZeroU32,
+	ops::{Deref, DerefMut},
+	vec,
+};
 
 use derive_where::derive_where;
 
 use crate::{
 	debug::lifetime::{DebugLifetime, Dependent},
 	entity::hashers::ArchetypeBuildHasher,
-	ArchetypeId, BypassExclusivity, Entity, ExclusiveUniverse,
+	ArchetypeId, Entity,
 };
 
 // === Aliases === //
@@ -200,6 +207,13 @@ impl<T> Drop for TaskQueue<T> {
 
 // === `func!` traits === //
 
+pub trait FuncMethodInjectorRef<T: ?Sized> {
+	type Guard<'a>: Deref<Target = T>;
+	type Injector;
+
+	const INJECTOR: Self::Injector;
+}
+
 pub trait FuncMethodInjectorMut<T: ?Sized> {
 	type Guard<'a>: DerefMut<Target = T>;
 	type Injector;
@@ -207,36 +221,72 @@ pub trait FuncMethodInjectorMut<T: ?Sized> {
 	const INJECTOR: Self::Injector;
 }
 
-#[derive(Debug, Copy, Clone, Default)]
-pub struct InjectFromExclusiveStorage;
+pub mod injectors {
+	use super::*;
+	use crate::{BypassExclusivity, ExclusiveUniverse};
 
-impl<T: 'static + Send + Sync + BypassExclusivity> FuncMethodInjectorMut<T>
-	for InjectFromExclusiveStorage
-{
-	type Guard<'a> = parking_lot::MappedRwLockWriteGuard<'a, T>;
-	type Injector = for<'injected> fn(
-		&mut &mut ExclusiveUniverse<'injected>,
-		&mut Entity,
-	) -> Self::Guard<'injected>;
+	// === ByExclusiveStorage === //
 
-	const INJECTOR: Self::Injector = {
-		fn injector_fn<'a, T: 'static + Send + Sync + BypassExclusivity>(
-			cx: &mut &mut ExclusiveUniverse<'a>,
-			me: &mut Entity,
-		) -> parking_lot::MappedRwLockWriteGuard<'a, T> {
-			cx.bypass_comp_mut(*me)
-		}
+	#[derive(Debug, Copy, Clone, Default)]
+	pub struct ByExclusiveStorage;
 
-		injector_fn
-	};
+	impl<T: 'static + Send + Sync + BypassExclusivity> FuncMethodInjectorRef<T> for ByExclusiveStorage {
+		type Guard<'a> = parking_lot::MappedRwLockReadGuard<'a, T>;
+		type Injector = for<'injected> fn(
+			&mut &mut ExclusiveUniverse<'injected>,
+			&mut Entity,
+		) -> Self::Guard<'injected>;
+
+		const INJECTOR: Self::Injector = {
+			fn injector_fn<'a, T: 'static + Send + Sync + BypassExclusivity>(
+				cx: &mut &mut ExclusiveUniverse<'a>,
+				me: &mut Entity,
+			) -> parking_lot::MappedRwLockReadGuard<'a, T> {
+				cx.bypass_comp(*me)
+			}
+
+			injector_fn
+		};
+	}
+
+	impl<T: 'static + Send + Sync + BypassExclusivity> FuncMethodInjectorMut<T> for ByExclusiveStorage {
+		type Guard<'a> = parking_lot::MappedRwLockWriteGuard<'a, T>;
+		type Injector = for<'injected> fn(
+			&mut &mut ExclusiveUniverse<'injected>,
+			&mut Entity,
+		) -> Self::Guard<'injected>;
+
+		const INJECTOR: Self::Injector = {
+			fn injector_fn<'a, T: 'static + Send + Sync + BypassExclusivity>(
+				cx: &mut &mut ExclusiveUniverse<'a>,
+				me: &mut Entity,
+			) -> parking_lot::MappedRwLockWriteGuard<'a, T> {
+				cx.bypass_comp_mut(*me)
+			}
+
+			injector_fn
+		};
+	}
 }
 
 // === `func!` macro === //
 
 #[doc(hidden)]
 pub mod macro_internal {
-	use super::FuncMethodInjectorMut;
+	use super::{FuncMethodInjectorMut, FuncMethodInjectorRef};
 	use std::ops::DerefMut;
+
+	pub trait FuncMethodInjectorRefGetGuard<T: ?Sized> {
+		type GuardHelper<'a>: Deref<Target = T>;
+	}
+
+	impl<G, T> FuncMethodInjectorRefGetGuard<T> for G
+	where
+		T: ?Sized,
+		G: FuncMethodInjectorRef<T>,
+	{
+		type GuardHelper<'a> = G::Guard<'a>;
+	}
 
 	pub trait FuncMethodInjectorMutGetGuard<T: ?Sized> {
 		type GuardHelper<'a>: DerefMut<Target = T>;
@@ -293,7 +343,41 @@ macro_rules! func {
 			$($where_token)*
 		)? {
 			#[allow(unused)]
-			pub fn new_method<Injector, Receiver, Func>(_injector: Injector, handler: Func) -> Self
+			pub fn new_method_ref<Injector, Receiver, Func>(_injector: Injector, handler: Func) -> Self
+			where
+				Injector: 'static + $crate::event::macro_internal::FuncMethodInjectorRefGetGuard<Receiver>,
+				Injector: $crate::event::FuncMethodInjectorRef<
+					Receiver,
+					Injector = for<
+						$inj_lt
+						$($(
+							$(,$fn_lt)*
+						)?)?
+					> fn(
+						$(&mut $inj),*
+					) -> Injector::GuardHelper<$inj_lt>>,
+				Receiver: ?Sized + 'static,
+				Func: 'static + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync +
+				for<
+					$inj_lt
+					$($(
+						$(,$fn_lt)*
+					)?)?
+				> Fn(
+					&Receiver,
+					$($inj,)*
+					$($para,)*
+				),
+			{
+				Self::new(move |$(mut $inj_name,)* $($para_name,)*| {
+					let __guard = Injector::INJECTOR($(&mut $inj_name,)*);
+
+					handler(&*__guard, $($inj_name,)* $($para_name,)*);
+				})
+			}
+
+			#[allow(unused)]
+			pub fn new_method_mut<Injector, Receiver, Func>(_injector: Injector, handler: Func) -> Self
 			where
 				Injector: 'static + $crate::event::macro_internal::FuncMethodInjectorMutGetGuard<Receiver>,
 				Injector: $crate::event::FuncMethodInjectorMut<
@@ -431,27 +515,3 @@ macro_rules! func {
 }
 
 pub use func;
-
-// mod temp_test {
-// 	use crate::prelude::*;
-
-// 	use super::InjectFromExclusiveStorage;
-
-// 	func! {
-// 		fn SceneUpdateHandler(&'l self [cx: &mut ExclusiveUniverse<'l>, me: Entity], engine: Entity)
-// 	}
-
-// 	fn example(cx: &mut ExclusiveUniverse, me: Entity) {
-// 		SceneUpdateHandler::new_method(InjectFromExclusiveStorage, Service::update)(cx, me, me);
-// 	}
-
-// 	struct Service {}
-
-// 	impl BypassExclusivity for Service {}
-
-// 	impl Service {
-// 		pub fn update(&mut self, cx: &mut ExclusiveUniverse, me: Entity, engine: Entity) {
-// 			todo!()
-// 		}
-// 	}
-// }
