@@ -5,7 +5,7 @@ use derive_where::derive_where;
 use crate::{
 	debug::lifetime::{DebugLifetime, Dependent},
 	entity::hashers::ArchetypeBuildHasher,
-	ArchetypeId, Entity,
+	ArchetypeId, BypassExclusivity, Entity, ExclusiveUniverse,
 };
 
 // === Aliases === //
@@ -198,6 +198,27 @@ impl<T> Drop for TaskQueue<T> {
 	}
 }
 
+// === `func!` traits === //
+
+pub trait FuncMethodInject<I> {
+	const INJECTOR: I;
+}
+
+// TODO: Replace this `impl` with a more flexible one allowing custom resolution.
+impl<T: 'static + Send + Sync + BypassExclusivity>
+	FuncMethodInject<
+		for<'injected> fn(
+			&mut &mut ExclusiveUniverse<'injected>,
+			&mut Entity,
+		) -> parking_lot::MappedRwLockWriteGuard<'injected, T>,
+	> for T
+{
+	const INJECTOR: for<'injected> fn(
+		&mut &mut ExclusiveUniverse<'injected>,
+		&mut Entity,
+	) -> parking_lot::MappedRwLockWriteGuard<'injected, T> = todo!();
+}
+
 // === `func!` macro === //
 
 #[doc(hidden)]
@@ -206,76 +227,15 @@ pub mod macro_internal {
 		clone::Clone,
 		convert::From,
 		fmt,
-		marker::{Send, Sync},
+		marker::{PhantomData, Send, Sync},
 		ops::Deref,
 		stringify,
 		sync::Arc,
 	};
 }
 
-// pub trait FuncMethodInject<I> {
-// 	const INJECTOR: I;
-// }
-
 #[macro_export]
 macro_rules! func {
-// 	(
-// 		$(#[$attr_meta:meta])*
-// 		$vis:vis fn $name:ident
-// 			$(
-// 				<$($generic:ident),* $(,)?>
-// 				$(<$($fn_lt:lifetime),* $(,)?>)?
-// 			)?
-// 			(
-// 				self [$($inj_para:ty),* $(,)?]
-// 				$(, $para:ty)* $(,)?
-// 			)
-// 		$(where $($where_token:tt)*)?
-// 	) => {
-// 		$crate::func! {
-// 			$(#[$attr_meta])*
-// 			$vis fn $name
-// 				< $($($generic),*)? >
-// 				< 'injected, $($($($fn_lt),*)?)? >
-// 				(
-// 					$($inj_para,)*
-// 					$($para,)*
-// 				)
-// 			$(where $($where_token)*)?
-// 		}
-//
-// 		impl$(<$($generic),*>)? $name $(<$($generic),*>)?
-// 		$(where
-// 			$($where_token)*
-// 		)? {
-// 			pub fn new_method_mut<__Receiver, __Func>(handler: __Func) -> Self
-// 			where
-// 				__Receiver: ?Sized + $crate::event::FuncMethodInject<
-// 					for<
-// 						'injected
-// 						$($(
-// 							$(,$fn_lt)*
-// 						)?)?
-// 					> fn(
-// 						$(&mut $inj_para),*
-// 					) -> $crate::parking_lot::MappedRwLockWriteGuard<'injected, __Receiver>,
-// 				>,
-// 				__Func: 'static + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync +
-// 					for<
-// 						'injected
-// 						$($(
-// 							$(,$fn_lt)*
-// 						)?)?
-// 					> Fn(
-// 						__Receiver,
-// 						$($inj_para,)*
-// 						$($para,)*
-// 					),
-// 			{
-// 				todo!()
-// 			}
-// 		}
-// 	};
 	(
 		$(#[$attr_meta:meta])*
 		$vis:vis fn $name:ident
@@ -283,7 +243,103 @@ macro_rules! func {
 				<$($generic:ident),* $(,)?>
 				$(<$($fn_lt:lifetime),* $(,)?>)?
 			)?
-			($($para:ty),* $(,)?)
+			(
+				self [$($inj_name:ident: $inj:ty),* $(,)?]
+				$(, $para_name:ident: $para:ty)* $(,)?
+			)
+		$(where $($where_token:tt)*)?
+	) => {
+		$crate::func! {
+			$(#[$attr_meta])*
+			$vis fn $name
+				< $($($generic),*)? >
+				< 'injected, $($($($fn_lt),*)?)? >
+				(
+					$($inj_name: $inj,)*
+					$($para_name: $para,)*
+				)
+			$(where $($where_token)*)?
+		}
+
+		impl$(<$($generic),*>)? $name $(<$($generic),*>)?
+		$(where
+			$($where_token)*
+		)? {
+			#[allow(unused)]
+			pub fn new_method_mut<__Receiver, __Func>(handler: __Func) -> Self
+			where
+				__Receiver: ?Sized + 'static + $crate::event::FuncMethodInject<
+					for<
+						'injected
+						$($(
+							$(,$fn_lt)*
+						)?)?
+					> fn(
+						$(&mut $inj),*
+					) -> $crate::parking_lot::MappedRwLockWriteGuard<'injected, __Receiver>,
+					// TODO: Open up to more types of guards.
+				>,
+				__Func: 'static + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync +
+					for<
+						'injected
+						$($(
+							$(,$fn_lt)*
+						)?)?
+					> Fn(
+						&mut __Receiver,
+						$($inj,)*
+						$($para,)*
+					),
+			{
+				Self::new(move |$(mut $inj_name,)* $($para_name,)*| {
+					let mut __guard = __Receiver::INJECTOR($(&mut $inj_name,)*);
+
+					handler(&mut *__guard, $($inj_name,)* $($para_name,)*);
+				})
+			}
+
+			#[allow(unused)]
+			pub fn new_method_ref<__Receiver, __Func>(handler: __Func) -> Self
+			where
+				__Receiver: ?Sized + 'static + $crate::event::FuncMethodInject<
+					for<
+						'injected
+						$($(
+							$(,$fn_lt)*
+						)?)?
+					> fn(
+						$(&mut $inj),*
+					) -> $crate::parking_lot::MappedRwLockReadGuard<'injected, __Receiver>,
+					// TODO: Open up to more types of guards.
+				>,
+				__Func: 'static + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync +
+					for<
+						'injected
+						$($(
+							$(,$fn_lt)*
+						)?)?
+					> Fn(
+						&__Receiver,
+						$($inj,)*
+						$($para,)*
+					),
+			{
+				Self::new(move |$(mut $inj_name,)* $($para_name,)*| {
+					let __guard = __Receiver::INJECTOR($(&mut $inj_name,)*);
+
+					handler(&*__guard, $($inj_name,)* $($para_name,)*);
+				})
+			}
+		}
+	};
+	(
+		$(#[$attr_meta:meta])*
+		$vis:vis fn $name:ident
+			$(
+				<$($generic:ident),* $(,)?>
+				$(<$($fn_lt:lifetime),* $(,)?>)?
+			)?
+			($($para_name:ident: $para:ty),* $(,)?)
 		$(where $($where_token:tt)*)?
 	) => {
 		$(#[$attr_meta])*
@@ -291,6 +347,7 @@ macro_rules! func {
 		$(where
 			$($where_token)*
 		)? {
+			_ty: ($($($crate::event::macro_internal::PhantomData<$generic>,)*)?),
 			// TODO: Optimize the internal representation to avoid allocations for context-less handlers.
 			handler: $crate::event::macro_internal::Arc<
 				dyn
@@ -305,11 +362,13 @@ macro_rules! func {
 		$(where
 			$($where_token)*
 		)? {
+			#[allow(unused)]
 			pub fn new<__Func>(handler: __Func) -> Self
 			where
 				__Func: 'static + $($(for<$($fn_lt),*>)?)? Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync,
 			{
 				Self {
+					_ty: ($($($crate::event::macro_internal::PhantomData::<$generic>,)*)?),
 					handler: $crate::event::macro_internal::Arc::new(handler),
 				}
 			}
@@ -368,6 +427,7 @@ macro_rules! func {
 		)? {
 			fn clone(&self) -> Self {
 				Self {
+					_ty: ($($($crate::event::macro_internal::PhantomData::<$generic>,)*)?),
 					handler: $crate::event::macro_internal::Clone::clone(&self.handler),
 				}
 			}

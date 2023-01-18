@@ -160,7 +160,7 @@ impl<T: 'static + Send + Sync> BuildableResourceRw for Storage<T> {
 }
 
 func! {
-	pub fn UniverseFlushTask(&mut ExclusiveUniverse)
+	pub fn UniverseFlushTask(cx: &mut ExclusiveUniverse)
 }
 
 // === ExclusiveUniverse === //
