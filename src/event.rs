@@ -1,4 +1,4 @@
-use std::{any::type_name, collections::HashMap, mem, num::NonZeroU32, vec};
+use std::{any::type_name, collections::HashMap, mem, num::NonZeroU32, ops::DerefMut, vec};
 
 use derive_where::derive_where;
 
@@ -200,29 +200,56 @@ impl<T> Drop for TaskQueue<T> {
 
 // === `func!` traits === //
 
-pub trait FuncMethodInject<I> {
-	const INJECTOR: I;
+pub trait FuncMethodInjectorMut<T: ?Sized> {
+	type Guard<'a>: DerefMut<Target = T>;
+	type Injector;
+
+	const INJECTOR: Self::Injector;
 }
 
-// TODO: Replace this `impl` with a more flexible one allowing custom resolution.
-impl<T: 'static + Send + Sync + BypassExclusivity>
-	FuncMethodInject<
-		for<'injected> fn(
-			&mut &mut ExclusiveUniverse<'injected>,
-			&mut Entity,
-		) -> parking_lot::MappedRwLockWriteGuard<'injected, T>,
-	> for T
+#[derive(Debug, Copy, Clone, Default)]
+pub struct InjectFromExclusiveStorage;
+
+impl<T: 'static + Send + Sync + BypassExclusivity> FuncMethodInjectorMut<T>
+	for InjectFromExclusiveStorage
 {
-	const INJECTOR: for<'injected> fn(
+	type Guard<'a> = parking_lot::MappedRwLockWriteGuard<'a, T>;
+	type Injector = for<'injected> fn(
 		&mut &mut ExclusiveUniverse<'injected>,
 		&mut Entity,
-	) -> parking_lot::MappedRwLockWriteGuard<'injected, T> = todo!();
+	) -> Self::Guard<'injected>;
+
+	const INJECTOR: Self::Injector = {
+		fn injector_fn<'a, T: 'static + Send + Sync + BypassExclusivity>(
+			cx: &mut &mut ExclusiveUniverse<'a>,
+			me: &mut Entity,
+		) -> parking_lot::MappedRwLockWriteGuard<'a, T> {
+			cx.bypass_comp_mut(*me)
+		}
+
+		injector_fn
+	};
 }
 
 // === `func!` macro === //
 
 #[doc(hidden)]
 pub mod macro_internal {
+	use super::FuncMethodInjectorMut;
+	use std::ops::DerefMut;
+
+	pub trait FuncMethodInjectorMutGetGuard<T: ?Sized> {
+		type GuardHelper<'a>: DerefMut<Target = T>;
+	}
+
+	impl<G, T> FuncMethodInjectorMutGetGuard<T> for G
+	where
+		T: ?Sized,
+		G: FuncMethodInjectorMut<T>,
+	{
+		type GuardHelper<'a> = G::Guard<'a>;
+	}
+
 	pub use std::{
 		clone::Clone,
 		convert::From,
@@ -244,7 +271,7 @@ macro_rules! func {
 				$(<$($fn_lt:lifetime),* $(,)?>)?
 			)?
 			(
-				self [$($inj_name:ident: $inj:ty),* $(,)?]
+				&$inj_lt:lifetime self [$($inj_name:ident: $inj:ty),* $(,)?]
 				$(, $para_name:ident: $para:ty)* $(,)?
 			)
 		$(where $($where_token:tt)*)?
@@ -253,7 +280,7 @@ macro_rules! func {
 			$(#[$attr_meta])*
 			$vis fn $name
 				< $($($generic),*)? >
-				< 'injected, $($($($fn_lt),*)?)? >
+				< $inj_lt, $($($($fn_lt),*)?)? >
 				(
 					$($inj_name: $inj,)*
 					$($para_name: $para,)*
@@ -266,68 +293,36 @@ macro_rules! func {
 			$($where_token)*
 		)? {
 			#[allow(unused)]
-			pub fn new_method_mut<__Receiver, __Func>(handler: __Func) -> Self
+			pub fn new_method<Injector, Receiver, Func>(_injector: Injector, handler: Func) -> Self
 			where
-				__Receiver: ?Sized + 'static + $crate::event::FuncMethodInject<
-					for<
-						'injected
+				Injector: 'static + $crate::event::macro_internal::FuncMethodInjectorMutGetGuard<Receiver>,
+				Injector: $crate::event::FuncMethodInjectorMut<
+					Receiver,
+					Injector = for<
+						$inj_lt
 						$($(
 							$(,$fn_lt)*
 						)?)?
 					> fn(
 						$(&mut $inj),*
-					) -> $crate::parking_lot::MappedRwLockWriteGuard<'injected, __Receiver>,
-					// TODO: Open up to more types of guards.
-				>,
-				__Func: 'static + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync +
-					for<
-						'injected
-						$($(
-							$(,$fn_lt)*
-						)?)?
-					> Fn(
-						&mut __Receiver,
-						$($inj,)*
-						$($para,)*
-					),
+					) -> Injector::GuardHelper<$inj_lt>>,
+				Receiver: ?Sized + 'static,
+				Func: 'static + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync +
+				for<
+					$inj_lt
+					$($(
+						$(,$fn_lt)*
+					)?)?
+				> Fn(
+					&mut Receiver,
+					$($inj,)*
+					$($para,)*
+				),
 			{
 				Self::new(move |$(mut $inj_name,)* $($para_name,)*| {
-					let mut __guard = __Receiver::INJECTOR($(&mut $inj_name,)*);
+					let mut __guard = Injector::INJECTOR($(&mut $inj_name,)*);
 
 					handler(&mut *__guard, $($inj_name,)* $($para_name,)*);
-				})
-			}
-
-			#[allow(unused)]
-			pub fn new_method_ref<__Receiver, __Func>(handler: __Func) -> Self
-			where
-				__Receiver: ?Sized + 'static + $crate::event::FuncMethodInject<
-					for<
-						'injected
-						$($(
-							$(,$fn_lt)*
-						)?)?
-					> fn(
-						$(&mut $inj),*
-					) -> $crate::parking_lot::MappedRwLockReadGuard<'injected, __Receiver>,
-					// TODO: Open up to more types of guards.
-				>,
-				__Func: 'static + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync +
-					for<
-						'injected
-						$($(
-							$(,$fn_lt)*
-						)?)?
-					> Fn(
-						&__Receiver,
-						$($inj,)*
-						$($para,)*
-					),
-			{
-				Self::new(move |$(mut $inj_name,)* $($para_name,)*| {
-					let __guard = __Receiver::INJECTOR($(&mut $inj_name,)*);
-
-					handler(&*__guard, $($inj_name,)* $($para_name,)*);
 				})
 			}
 		}
@@ -436,3 +431,27 @@ macro_rules! func {
 }
 
 pub use func;
+
+// mod temp_test {
+// 	use crate::prelude::*;
+
+// 	use super::InjectFromExclusiveStorage;
+
+// 	func! {
+// 		fn SceneUpdateHandler(&'l self [cx: &mut ExclusiveUniverse<'l>, me: Entity], engine: Entity)
+// 	}
+
+// 	fn example(cx: &mut ExclusiveUniverse, me: Entity) {
+// 		SceneUpdateHandler::new_method(InjectFromExclusiveStorage, Service::update)(cx, me, me);
+// 	}
+
+// 	struct Service {}
+
+// 	impl BypassExclusivity for Service {}
+
+// 	impl Service {
+// 		pub fn update(&mut self, cx: &mut ExclusiveUniverse, me: Entity, engine: Entity) {
+// 			todo!()
+// 		}
+// 	}
+// }
