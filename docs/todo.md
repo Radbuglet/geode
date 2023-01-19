@@ -10,14 +10,16 @@
 
 ##### Convenience Extensions
 
-- [x] Improve `compost`:
+- [x] Allow `bundles` to spawn from an `ExclusiveUniverse`.
+- [x] Implement dispatch utils:
+  - [x] Mechanisms to make writing delegates easier (e.g. a `func!` macro)
+  - [x] Method conversions in `func`
+  - [ ] Add return types to `func`
+  - [ ] Ability to take `func` objects statically
+  - [ ] A standard `DestructionHandler` trait
+- [ ] Improve `compost`:
   - [ ] Allow unlimited `Deref` chains.
   - [ ] Allow for opt-in increases to max arity.
-- [ ] Implement some common utils:
-  - [x] Mechanisms to make writing delegates easier (e.g. a `func!` macro)
-  - [ ] Method conversions in `func`
-  - [ ] Ability to take `func` objects statically.
-  - [ ] A standard `DestructionHandler` trait.
 - [ ] Implement `MappedStorage` and `StorageView` traits.
 - [ ] Implement `EntityMap` and `ArchetypeMap`.
 
@@ -49,3 +51,9 @@
 - [ ] Publish a stable interface for `compost`.
 - [ ] Perform code review and write unit tests.
 - [ ] Document library and publish.
+
+## Unresolved Questions
+
+1. Sharded storages have to be special-cased in the `Universe`. How could we generalize these mechanisms to other forms of temporaries?
+2. `BypassExclusivity` is a pretty broad trait. Could we make it more fine to prevent even more forms of misuse? Should we force regular and `BypassExclusivity` resources to use different methods to aid in refactoring?
+3. The `ExclusiveUniverse` model can force quite a bit of reborrowing. Is there a way around this?

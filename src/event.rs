@@ -232,40 +232,16 @@ pub mod injectors {
 
 	impl<T: 'static + Send + Sync + BypassExclusivity> FuncMethodInjectorRef<T> for ByExclusiveStorage {
 		type Guard<'a> = parking_lot::MappedRwLockReadGuard<'a, T>;
-		type Injector = for<'injected> fn(
-			&mut &mut ExclusiveUniverse<'injected>,
-			&mut Entity,
-		) -> Self::Guard<'injected>;
+		type Injector = for<'i> fn(&mut &mut ExclusiveUniverse<'i>, &mut Entity) -> Self::Guard<'i>;
 
-		const INJECTOR: Self::Injector = {
-			fn injector_fn<'a, T: 'static + Send + Sync + BypassExclusivity>(
-				cx: &mut &mut ExclusiveUniverse<'a>,
-				me: &mut Entity,
-			) -> parking_lot::MappedRwLockReadGuard<'a, T> {
-				cx.bypass_comp(*me)
-			}
-
-			injector_fn
-		};
+		const INJECTOR: Self::Injector = |cx, me| cx.bypass_comp(*me);
 	}
 
 	impl<T: 'static + Send + Sync + BypassExclusivity> FuncMethodInjectorMut<T> for ByExclusiveStorage {
 		type Guard<'a> = parking_lot::MappedRwLockWriteGuard<'a, T>;
-		type Injector = for<'injected> fn(
-			&mut &mut ExclusiveUniverse<'injected>,
-			&mut Entity,
-		) -> Self::Guard<'injected>;
+		type Injector = for<'i> fn(&mut &mut ExclusiveUniverse<'i>, &mut Entity) -> Self::Guard<'i>;
 
-		const INJECTOR: Self::Injector = {
-			fn injector_fn<'a, T: 'static + Send + Sync + BypassExclusivity>(
-				cx: &mut &mut ExclusiveUniverse<'a>,
-				me: &mut Entity,
-			) -> parking_lot::MappedRwLockWriteGuard<'a, T> {
-				cx.bypass_comp_mut(*me)
-			}
-
-			injector_fn
-		};
+		const INJECTOR: Self::Injector = |cx, me| cx.bypass_comp_mut(*me);
 	}
 }
 
@@ -370,9 +346,9 @@ macro_rules! func {
 				),
 			{
 				Self::new(move |$(mut $inj_name,)* $($para_name,)*| {
-					let __guard = Injector::INJECTOR($(&mut $inj_name,)*);
+					let guard = Injector::INJECTOR($(&mut $inj_name,)*);
 
-					handler(&*__guard, $($inj_name,)* $($para_name,)*);
+					handler(&*guard, $($inj_name,)* $($para_name,)*);
 				})
 			}
 
@@ -404,9 +380,9 @@ macro_rules! func {
 				),
 			{
 				Self::new(move |$(mut $inj_name,)* $($para_name,)*| {
-					let mut __guard = Injector::INJECTOR($(&mut $inj_name,)*);
+					let mut guard = Injector::INJECTOR($(&mut $inj_name,)*);
 
-					handler(&mut *__guard, $($inj_name,)* $($para_name,)*);
+					handler(&mut *guard, $($inj_name,)* $($para_name,)*);
 				})
 			}
 		}
@@ -442,9 +418,9 @@ macro_rules! func {
 			$($where_token)*
 		)? {
 			#[allow(unused)]
-			pub fn new<__Func>(handler: __Func) -> Self
+			pub fn new<Func>(handler: Func) -> Self
 			where
-				__Func: 'static + $($(for<$($fn_lt),*>)?)? Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync,
+				Func: 'static + $($(for<$($fn_lt),*>)?)? Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync,
 			{
 				Self {
 					_ty: ($($($crate::event::macro_internal::PhantomData::<$generic>,)*)?),
@@ -454,17 +430,17 @@ macro_rules! func {
 		}
 
 		impl<
-			__Func:
+			Func:
 				'static +
 					$($(for<$($fn_lt),*>)?)? Fn($($para),*) +
 					$crate::event::macro_internal::Send +
 					$crate::event::macro_internal::Sync
 			$(, $($generic),*)?
-		> $crate::event::macro_internal::From<__Func> for $name $(<$($generic),*>)?
+		> $crate::event::macro_internal::From<Func> for $name $(<$($generic),*>)?
 		$(where
 			$($where_token)*
 		)? {
-			fn from(handler: __Func) -> Self {
+			fn from(handler: Func) -> Self {
 				Self::new(handler)
 			}
 		}

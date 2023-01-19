@@ -15,7 +15,7 @@ use crate::{
 		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
 	},
 	util::no_hash::RandIdGen,
-	Bundle, Dependent,
+	Bundle, Dependent, Universe,
 };
 
 // === Handles === //
@@ -154,6 +154,15 @@ impl<M: ?Sized> Archetype<M> {
 		target
 	}
 
+	pub fn spawn_with_auto_cx<L: DebugLabel>(&mut self, cx: &Universe, name: L, bundle: M) -> Entity
+	where
+		M: Bundle,
+	{
+		let target = self.spawn(name);
+		bundle.attach_auto_cx(cx, target);
+		target
+	}
+
 	pub fn despawn(&mut self, entity: Entity) {
 		if cfg!(debug_assertions) && entity.arch.id != self.id {
 			log::error!(
@@ -182,6 +191,15 @@ impl<M: ?Sized> Archetype<M> {
 		M: Bundle,
 	{
 		let bundle = M::detach(cx, entity);
+		self.despawn(entity);
+		bundle
+	}
+
+	pub fn despawn_and_extract_auto_cx(&mut self, cx: &Universe, entity: Entity) -> M
+	where
+		M: Bundle,
+	{
+		let bundle = M::detach_auto_cx(cx, entity);
 		self.despawn(entity);
 		bundle
 	}
