@@ -19,7 +19,7 @@ pub mod prelude {
 		entity::{Archetype, ArchetypeId, Entity},
 		event::{func, injectors, DestroyQueue, EntityDestroyEvent, EventQueue, EventQueueIter},
 		query::Query,
-		storage::Storage,
+		storage::{Storage, StorageView, StorageViewMut},
 		universe::{BypassExclusivity, ExclusiveUniverse, Universe},
 	};
 }

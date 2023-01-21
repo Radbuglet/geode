@@ -9,10 +9,11 @@ use parking_lot::{
 };
 
 use crate::{
+	debug::label::DebugLabel,
 	event::TaskQueue,
 	func,
 	util::{eventual_map::EventualMap, type_id::NamedTypeId},
-	Archetype, Entity, Storage,
+	Archetype, Bundle, Entity, Storage,
 };
 
 // === Universe === //
@@ -30,6 +31,10 @@ impl Universe {
 
 	pub fn as_exclusive(&mut self) -> ExclusiveUniverse<'_> {
 		ExclusiveUniverse::new(self)
+	}
+
+	pub fn as_exclusive_dangerous(&self) -> ExclusiveUniverse<'_> {
+		ExclusiveUniverse::new_dangerous(self)
 	}
 
 	// === Primitive accessors === //
@@ -190,6 +195,23 @@ impl<'r> ExclusiveUniverse<'r> {
 
 	pub fn into_universe_ref(self) -> &'r Universe {
 		self.universe
+	}
+
+	// Helpers
+	pub fn spawn_bundle<B: BuildableArchetype + Bundle, L: DebugLabel>(
+		&mut self,
+		name: L,
+		bundle: B,
+	) -> Entity {
+		self.universe_dangerous()
+			.archetype_mut::<B>()
+			.spawn_with_auto_cx(self, name, bundle)
+	}
+
+	pub fn despawn_bundle<B: BuildableArchetype + Bundle>(&mut self, target: Entity) -> B {
+		self.universe_dangerous()
+			.archetype_mut::<B>()
+			.despawn_and_extract_auto_cx(self, target)
 	}
 
 	// Bypasses
