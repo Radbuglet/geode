@@ -11,14 +11,17 @@
 ##### Convenience Extensions
 
 - [x] Allow `bundles` to spawn from an `ExclusiveUniverse`.
+  - [ ] Replace this feature with a method in the `Universe` to make it slightly safer.
 - [x] Implement dispatch utils:
   - [x] Mechanisms to make writing delegates easier (e.g. a `func!` macro)
   - [x] Method conversions in `func`
-  - [ ] Add return types to `func`
+  - [x] Add return types to `func`
   - [ ] Ability to take `func` objects statically
   - [ ] A standard `DestructionHandler` trait
 - [ ] Improve `compost`:
   - [ ] Allow unlimited `Deref` chains.
+  - [ ] Allow users to define custom primary and backup data sources
+  - [ ] Allow users to `decompose!` a `Universe` as a fallback
   - [ ] Allow for opt-in increases to max arity.
 - [ ] Implement `MappedStorage` and `StorageView` traits.
 - [ ] Implement `EntityMap` and `ArchetypeMap`.

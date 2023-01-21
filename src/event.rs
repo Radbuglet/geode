@@ -299,7 +299,7 @@ macro_rules! func {
 			(
 				&$inj_lt:lifetime self [$($inj_name:ident: $inj:ty),* $(,)?]
 				$(, $para_name:ident: $para:ty)* $(,)?
-			)
+			) $(-> $ret:ty)?
 		$(where $($where_token:tt)*)?
 	) => {
 		$crate::func! {
@@ -310,7 +310,7 @@ macro_rules! func {
 				(
 					$($inj_name: $inj,)*
 					$($para_name: $para,)*
-				)
+				) $(-> $ret)?
 			$(where $($where_token)*)?
 		}
 
@@ -333,22 +333,19 @@ macro_rules! func {
 						$(&mut $inj),*
 					) -> Injector::GuardHelper<$inj_lt>>,
 				Receiver: ?Sized + 'static,
-				Func: 'static + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync +
-				for<
-					$inj_lt
-					$($(
-						$(,$fn_lt)*
-					)?)?
-				> Fn(
-					&Receiver,
-					$($inj,)*
-					$($para,)*
-				),
+				Func: 'static
+					+ $crate::event::macro_internal::Send
+					+ $crate::event::macro_internal::Sync
+					+ for<$inj_lt $($( $(,$fn_lt)* )?)?> Fn(
+						&Receiver,
+						$($inj,)*
+						$($para,)*
+					) $(-> $ret)?,
 			{
 				Self::new(move |$(mut $inj_name,)* $($para_name,)*| {
 					let guard = Injector::INJECTOR($(&mut $inj_name,)*);
 
-					handler(&*guard, $($inj_name,)* $($para_name,)*);
+					handler(&*guard, $($inj_name,)* $($para_name,)*)
 				})
 			}
 
@@ -367,22 +364,19 @@ macro_rules! func {
 						$(&mut $inj),*
 					) -> Injector::GuardHelper<$inj_lt>>,
 				Receiver: ?Sized + 'static,
-				Func: 'static + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync +
-				for<
-					$inj_lt
-					$($(
-						$(,$fn_lt)*
-					)?)?
-				> Fn(
-					&mut Receiver,
-					$($inj,)*
-					$($para,)*
-				),
+				Func: 'static
+					+ $crate::event::macro_internal::Send
+					+ $crate::event::macro_internal::Sync
+					+ for<$inj_lt $($( $(,$fn_lt)* )?)?> Fn(
+						&mut Receiver,
+						$($inj,)*
+						$($para,)*
+					) $(-> $ret)?,
 			{
 				Self::new(move |$(mut $inj_name,)* $($para_name,)*| {
 					let mut guard = Injector::INJECTOR($(&mut $inj_name,)*);
 
-					handler(&mut *guard, $($inj_name,)* $($para_name,)*);
+					handler(&mut *guard, $($inj_name,)* $($para_name,)*)
 				})
 			}
 		}
@@ -394,7 +388,7 @@ macro_rules! func {
 				<$($generic:ident),* $(,)?>
 				$(<$($fn_lt:lifetime),* $(,)?>)?
 			)?
-			($($para_name:ident: $para:ty),* $(,)?)
+			($($para_name:ident: $para:ty),* $(,)?) $(-> $ret:ty)?
 		$(where $($where_token:tt)*)?
 	) => {
 		$(#[$attr_meta])*
@@ -407,7 +401,7 @@ macro_rules! func {
 			handler: $crate::event::macro_internal::Arc<
 				dyn
 					$($(for<$($fn_lt),*>)?)?
-					Fn($($para),*) +
+					Fn($($para),*) $(-> $ret)? +
 						$crate::event::macro_internal::Send +
 						$crate::event::macro_internal::Sync
 			>,
@@ -420,7 +414,11 @@ macro_rules! func {
 			#[allow(unused)]
 			pub fn new<Func>(handler: Func) -> Self
 			where
-				Func: 'static + $($(for<$($fn_lt),*>)?)? Fn($($para),*) + $crate::event::macro_internal::Send + $crate::event::macro_internal::Sync,
+				Func: 'static +
+					$crate::event::macro_internal::Send +
+					$crate::event::macro_internal::Sync +
+					$($(for<$($fn_lt),*>)?)?
+						Fn($($para),*) $(-> $ret)?,
 			{
 				Self {
 					_ty: ($($($crate::event::macro_internal::PhantomData::<$generic>,)*)?),
@@ -430,11 +428,11 @@ macro_rules! func {
 		}
 
 		impl<
-			Func:
-				'static +
-					$($(for<$($fn_lt),*>)?)? Fn($($para),*) +
-					$crate::event::macro_internal::Send +
-					$crate::event::macro_internal::Sync
+			Func: 'static +
+				$crate::event::macro_internal::Send +
+				$crate::event::macro_internal::Sync +
+				$($(for<$($fn_lt),*>)?)?
+					Fn($($para),*) $(-> $ret)?
 			$(, $($generic),*)?
 		> $crate::event::macro_internal::From<Func> for $name $(<$($generic),*>)?
 		$(where
@@ -449,8 +447,7 @@ macro_rules! func {
 		$(where
 			$($where_token)*
 		)? {
-			type Target = dyn
-				$($(for<$($fn_lt),*>)?)? Fn($($para),*) +
+			type Target = dyn $($(for<$($fn_lt),*>)?)? Fn($($para),*) $(-> $ret)? +
 				$crate::event::macro_internal::Send +
 				$crate::event::macro_internal::Sync;
 
