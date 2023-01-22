@@ -152,13 +152,13 @@ assert!(is_condemned == cfg!(debug_assertions));
 
 ### Universes
 
-**Universes**, like *worlds* in traditional entity-component-systems, are a store of global state. However, unlike ECS worlds, universes typically only store `Storage`—that's it! It is very rare, although it is allowed, to store global state in the same way that you would store singletons as resources in an ECS world.
+**Universes**, like *worlds* in traditional entity-component-systems, are a store of global state. However, unlike ECS worlds, universes typically only store `Storages`—that's it! It is very rare, although it is allowed, to store global state in the same way that you would store singletons as resources in an ECS world.
 
 We can get away with this in Geode because, unlike a traditional ECS, Geode encourages you to define systems as regular functions receiving their context through their arguments. For example, instead of storing a timer as a resource so that game systems have access to it, the object in charge of handling that scene could pass the scene entity to its list of dependencies and let them acquire the timer from there. This ensures that, for example, we can create multiple scenes with multiple different timers in a given world without having to replace every instance of a timer resource with a timer component on a scene entity.
 
 Although the previous paragraph would suggest that all forms of global state are anti-patterns—encouraging a design where the `Universe` is omitted entirely—we still have good reason to make most `Storages` into singletons. In putting all components of a given type into a single storage, it becomes trivial to access the component: just acquire the corresponding storage from the universe and index into it. Compare that to a multi-storage approach where there is no differentiation between a component being in a different storage or just not being there at all!
 
-You get these benefits without losing opportunities for multi-threading thanks to the `ShardedStorage` wrapper, which allows you to access components from different archetypes concurrently on different threads so long as you can prove exclusive access to that archetype through a mutable reference.
+You get these benefits without losing opportunities for multi-threading thanks to the `ShardedStorage` wrapper, which allows you to access components from different archetypes concurrently on different threads so long as you can prove exclusive access to that archetype through a mutable reference to the `Archetype`.
 
 There is also the occasional argument for placing `Archetypes` into the `Universe`—usually convenience since there really isn't a good architectural argument for why putting them elsewhere can be harmful. Doing this, however, is quite rare and support is somewhat limited out of the box (e.g. you can't easily add metadata to the archetype in its constructor without going through a locked universe resource).
 
@@ -252,7 +252,7 @@ println!("The counter is now {}.", *universe.resource_ref::<Counter>)();
 
 #### Exclusive Universes
 
-When passing the `Universe` around—especially when passing it to dynamically dispatched function handlers—it can be pretty tricky to keep track of which resources have been borrowed already. Luckily, Geode provides a useful wrapper around `Universes` to make them much safer without compromising too much of their flexibility.
+When passing the `Universe` around—especially when passing it to dynamically dispatched function handlers—it can be pretty tricky to keep track of which resources have already been borrowed. Luckily, Geode provides a useful wrapper around `Universes` to make them much safer without compromising too much of their flexibility.
 
 `ExclusiveUniverse<'r>` is a wrapper around a `&'r Universe` that asserts that it is the only such reference to that `Universe`. Methods expecting exclusive access over the `Universe` and all of its components can request a `&mut ExclusiveUniverse`. These behave almost exactly like references to a `Universe` and, indeed, `ExclusiveUniverse` immutably dereferences to a `Universe`. `ExclusiveUniverse` differentiates itself from a `&mut Universe`, however, by the way in which they allow carefully-selected carveouts for bypassing this exclusivity.
 

@@ -116,6 +116,20 @@ impl Universe {
 		self.resource_mut()
 	}
 
+	// === Exclusive helpers === //
+
+	pub fn spawn_bundle<B: BuildableArchetype + Bundle, L: DebugLabel>(
+		&mut self,
+		name: L,
+		bundle: B,
+	) -> Entity {
+		self.as_exclusive().spawn_bundle(name, bundle)
+	}
+
+	pub fn despawn_bundle<B: BuildableArchetype + Bundle>(&mut self, target: Entity) -> B {
+		self.as_exclusive().despawn_bundle(target)
+	}
+
 	// === Flushing === //
 
 	pub fn add_flush_task(&self, task: UniverseFlushTask) {
@@ -176,7 +190,8 @@ pub struct ExclusiveUniverse<'r> {
 }
 
 impl<'r> ExclusiveUniverse<'r> {
-	// Conversions
+	// === Conversions === //
+
 	pub fn new(universe: &'r mut Universe) -> Self {
 		Self { universe }
 	}
@@ -197,7 +212,8 @@ impl<'r> ExclusiveUniverse<'r> {
 		self.universe
 	}
 
-	// Helpers
+	// === Exclusive helpers === //
+
 	pub fn spawn_bundle<B: BuildableArchetype + Bundle, L: DebugLabel>(
 		&mut self,
 		name: L,
@@ -214,7 +230,8 @@ impl<'r> ExclusiveUniverse<'r> {
 			.despawn_and_extract_auto_cx(self, target)
 	}
 
-	// Bypasses
+	// === Bypasses === //
+
 	pub fn bypass_try_resource<T>(&self) -> Option<&'r T>
 	where
 		T: 'static + BypassExclusivity,

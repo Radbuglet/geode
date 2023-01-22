@@ -16,7 +16,9 @@ pub mod prelude {
 		bundle::{bundle, Bundle},
 		compost::{decompose, Context},
 		debug::{label::NO_LABEL, lifetime::Dependent},
-		entity::{Archetype, ArchetypeId, Entity},
+		entity::{
+			Archetype, ArchetypeId, ArchetypeMap, ArchetypeSet, Entity, EntityMap, EntitySet,
+		},
 		event::{func, injectors, DestroyQueue, EntityDestroyEvent, EventQueue, EventQueueIter},
 		query::Query,
 		storage::{Storage, StorageView, StorageViewMut},
