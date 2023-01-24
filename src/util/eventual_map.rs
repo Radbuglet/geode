@@ -139,10 +139,10 @@ where
 
 	// === Synchronized === //
 
-	pub fn insert(&mut self, key: K, value: Box<V>) -> Option<Box<V>> {
-		self.flush();
-		self.established.insert(key, value)
-	}
+	// pub fn insert(&mut self, key: K, value: Box<V>) -> Option<Box<V>> {
+	// 	self.flush();
+	// 	self.established.insert(key, value)
+	// }
 
 	pub fn remove<Q>(&mut self, key: &Q) -> Option<Box<V>>
 	where
@@ -153,13 +153,13 @@ where
 		self.established.remove(key)
 	}
 
-	pub fn get_mut_or_create<F>(&mut self, key: K, f: F) -> &mut V
-	where
-		F: FnOnce() -> Box<V>,
-	{
-		self.flush();
-		self.established.entry(key).or_insert_with(f)
-	}
+	// pub fn get_mut_or_create<F>(&mut self, key: K, f: F) -> &mut V
+	// where
+	// 	F: FnOnce() -> Box<V>,
+	// {
+	// 	self.flush();
+	// 	self.established.entry(key).or_insert_with(f)
+	// }
 
 	pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
 	where

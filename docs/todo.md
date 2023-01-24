@@ -2,9 +2,12 @@
 
 ##### Entity Model
 
+- [ ] Extend `Universe` back to its former glory:
+  - [x] Implement managed archetypes.
+  - [x] Implement `ArchetypeHandle`.
+  - [ ] Implement archetype tagging.
 - [ ] Add support for late-initialized and nested `bundle!` components.
 - [ ] Allow `EventQueueIter` to be reiterated and polled on individual archetypes.
-- [ ] Implement some sort of automatic `ArchetypeMap` that is `Universe`-friendly.
 
 ##### Convenience Extensions
 
@@ -17,9 +20,10 @@
   - [x] Add return types to `func`
   - [ ] Ability to take `func` objects statically
 - [x] Implement `MappedStorage` and `StorageView` traits.
-- [x] Implement `ArchetypeGroup`.
-- [ ] Implement `SingletonMap`.
-- [ ] Implement `OwnedEntity`.
+- [ ] Implement new destruction model:
+  - [ ] Implement standard destructor traits and delegates.
+  - [ ] Implement `OwnedEntity`.
+  - [ ] Implement `SingletonMap`.
 - [ ] Improve `compost`:
   - [ ] Allow unlimited `Deref` chains.
   - [ ] Allow users to define custom primary and backup data sources

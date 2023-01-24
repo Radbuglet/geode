@@ -17,8 +17,7 @@ pub mod prelude {
 		compost::{decompose, Context},
 		debug::{label::NO_LABEL, lifetime::Dependent},
 		entity::{
-			Archetype, ArchetypeGroup, ArchetypeId, ArchetypeMap, ArchetypeSet, Entity, EntityMap,
-			EntitySet,
+			Archetype, ArchetypeId, ArchetypeMap, ArchetypeSet, Entity, EntityMap, EntitySet,
 		},
 		event::{func, injectors, DestroyQueue, EntityDestroyEvent, EventQueue, EventQueueIter},
 		query::Query,

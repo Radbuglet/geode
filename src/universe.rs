@@ -1,19 +1,23 @@
 use std::{
 	any::{type_name, Any},
+	marker::PhantomData,
+	mem::{self, transmute},
 	ops::Deref,
+	sync::{Arc, Weak},
 };
 
 use fnv::FnvBuildHasher;
 use parking_lot::{
-	MappedRwLockReadGuard, MappedRwLockWriteGuard, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard,
+	MappedMutexGuard, MappedRwLockReadGuard, MappedRwLockWriteGuard, Mutex, MutexGuard, RwLock,
+	RwLockReadGuard, RwLockWriteGuard,
 };
 
 use crate::{
-	debug::label::DebugLabel,
-	event::TaskQueue,
+	debug::{label::DebugLabel, lifetime::LifetimeLike},
+	entity::hashers,
 	func,
 	util::{eventual_map::EventualMap, type_id::NamedTypeId},
-	Archetype, Bundle, Entity, Storage,
+	Archetype, ArchetypeId, Bundle, Entity, Storage,
 };
 
 // === Universe === //
@@ -21,7 +25,19 @@ use crate::{
 #[derive(Debug, Default)]
 pub struct Universe {
 	resources: EventualMap<NamedTypeId, dyn Any + Send + Sync, FnvBuildHasher>,
-	flush_tasks: Mutex<TaskQueue<UniverseFlushTask>>,
+	archetypes: EventualMap<ArchetypeId, ManagedArchetype, hashers::ArchetypeBuildHasher>,
+	proxied: Arc<ProxyState>,
+}
+
+#[derive(Debug)]
+struct ManagedArchetype {
+	archetype: Mutex<Archetype>,
+	removal_tasks: Mutex<Vec<UniverseArchRemovalTask>>,
+}
+
+#[derive(Debug, Default)]
+struct ProxyState {
+	flush_tasks: Mutex<Vec<UniverseFlushTask>>,
 }
 
 impl Universe {
@@ -37,7 +53,7 @@ impl Universe {
 		ExclusiveUniverse::new_dangerous(self)
 	}
 
-	// === Primitive accessors === //
+	// === Resource Primitives === //
 
 	pub fn init_resource<T: 'static + Send + Sync>(&self, value: T) -> &T {
 		self.resources
@@ -78,7 +94,7 @@ impl Universe {
 		self.resource_or_init(|| T::create(self))
 	}
 
-	// === Accessor aliases === //
+	// === Resource Aliases === //
 
 	pub fn resource_rw<T: BuildableResourceRw>(&self) -> &RwLock<T> {
 		self.resource()
@@ -108,15 +124,76 @@ impl Universe {
 		RwLockWriteGuard::map(self.storage_mut(), |storage| &mut storage[target])
 	}
 
-	pub fn archetype<M: ?Sized + BuildableArchetype>(&self) -> RwLockReadGuard<Archetype<M>> {
-		self.resource_ref()
+	// === Archetype Primitives === //
+
+	pub fn register_archetype<M: ?Sized>(&self, archetype: Archetype) -> ArchetypeHandle<M> {
+		let id = archetype.id();
+		self.archetypes.add(
+			id,
+			Box::new(ManagedArchetype {
+				archetype: Mutex::new(archetype),
+				removal_tasks: Mutex::new(Vec::new()),
+			}),
+		);
+
+		ArchetypeHandle {
+			_ty: PhantomData,
+			id,
+			universe: self.proxy(),
+		}
 	}
 
-	pub fn archetype_mut<M: ?Sized + BuildableArchetype>(&self) -> RwLockWriteGuard<Archetype<M>> {
-		self.resource_mut()
+	pub fn create_archetype<M: ?Sized>(&self, name: impl DebugLabel) -> ArchetypeHandle<M> {
+		self.register_archetype(Archetype::new(name))
 	}
 
-	// === Exclusive helpers === //
+	pub fn try_archetype_by_id(&self, id: ArchetypeId) -> Option<MutexGuard<Archetype>> {
+		if id.is_condemned() {
+			log::error!("Attempted to acquire a dead archetype with ID {id:?} from the universe.");
+			// (fallthrough)
+		}
+
+		self.archetypes
+			.get(&id)
+			.map(|managed| managed.archetype.try_lock().unwrap())
+	}
+
+	pub fn archetype_by_id(&self, id: ArchetypeId) -> MutexGuard<Archetype> {
+		self.try_archetype_by_id(id).unwrap()
+	}
+
+	pub fn add_archetype_removal_handler(&self, id: ArchetypeId, handler: UniverseArchRemovalTask) {
+		self.archetypes[&id].removal_tasks.lock().push(handler);
+	}
+
+	pub fn remove_archetype(&mut self, id: ArchetypeId) -> Archetype {
+		let mut managed = self.archetypes.remove(&id).unwrap();
+
+		for task in managed.removal_tasks.into_inner() {
+			task(self, managed.archetype.get_mut());
+		}
+
+		managed.archetype.into_inner()
+	}
+
+	// === Archetype Meta === //
+
+	// TODO
+
+	// === Archetype Aliases === //
+
+	pub fn archetype_handle<M: ?Sized + BuildableArchetype>(&self) -> &ArchetypeHandle<M> {
+		self.resource()
+	}
+
+	pub fn archetype<M: ?Sized + BuildableArchetype>(&self) -> MappedMutexGuard<Archetype<M>> {
+		MutexGuard::map(
+			self.archetype_by_id(self.archetype_handle::<M>().id()),
+			|arch| arch.cast_marker_mut(),
+		)
+	}
+
+	// === Exclusive Helpers === //
 
 	pub fn spawn_bundle<B: BuildableArchetype + Bundle>(
 		&mut self,
@@ -133,14 +210,22 @@ impl Universe {
 	// === Flushing === //
 
 	pub fn add_flush_task(&self, task: UniverseFlushTask) {
-		self.flush_tasks.lock().push(task);
+		self.proxied.flush_tasks.lock().push(task);
+	}
+
+	pub fn proxy(&self) -> UniverseProxy {
+		UniverseProxy(Arc::downgrade(&self.proxied))
 	}
 
 	pub fn flush(&mut self) {
+		// Flush maps
 		self.resources.flush();
+		self.archetypes.flush();
 
-		while let Some(handle_task) = self.flush_tasks.get_mut().next_task() {
-			handle_task(&mut self.as_exclusive());
+		// Process handlers
+		let task_list = mem::take(&mut *self.proxied.flush_tasks.lock());
+		for handler in task_list {
+			handler(self);
 		}
 	}
 }
@@ -154,9 +239,8 @@ pub trait BuildableResourceRw: 'static + Sized + Send + Sync {
 }
 
 pub trait BuildableArchetype: 'static {
-	fn create(universe: &Universe) -> Archetype<Self> {
-		let _ = universe;
-		Archetype::new(type_name::<Self>())
+	fn create(universe: &Universe) -> ArchetypeHandle<Self> {
+		universe.create_archetype(type_name::<Self>())
 	}
 }
 
@@ -166,7 +250,7 @@ impl<T: BuildableResourceRw> BuildableResource for RwLock<T> {
 	}
 }
 
-impl<M: ?Sized + BuildableArchetype> BuildableResourceRw for Archetype<M> {
+impl<M: ?Sized + BuildableArchetype> BuildableResource for ArchetypeHandle<M> {
 	fn create(universe: &Universe) -> Self {
 		M::create(universe)
 	}
@@ -179,7 +263,79 @@ impl<T: 'static + Send + Sync> BuildableResourceRw for Storage<T> {
 }
 
 func! {
-	pub fn UniverseFlushTask(cx: &mut ExclusiveUniverse)
+	pub fn UniverseFlushTask(cx: &mut Universe)
+}
+
+func! {
+	pub fn UniverseArchRemovalTask(cx: &mut Universe, arch: &mut Archetype)
+}
+
+// === UniverseProxy === //
+
+#[derive(Debug, Clone)]
+pub struct UniverseProxy(Weak<ProxyState>);
+
+impl UniverseProxy {
+	pub fn add_flush_task(&self, task: UniverseFlushTask) {
+		let Some(proxy_state) = Weak::upgrade(&self.0) else {
+			log::error!("Attempted to call `add_flush_task` on a `UniverseProxy` belonging to a dead universe.");
+			return;
+		};
+
+		proxy_state.flush_tasks.lock().push(task);
+	}
+}
+
+// === ArchetypeHandle === //
+
+#[derive(Debug, Clone)]
+#[repr(C)]
+pub struct ArchetypeHandle<M: ?Sized = ()> {
+	_ty: PhantomData<fn(M) -> M>,
+	universe: UniverseProxy,
+	id: ArchetypeId,
+}
+
+impl<M: ?Sized> ArchetypeHandle<M> {
+	pub fn cast_marker<N: ?Sized>(self) -> ArchetypeHandle<N> {
+		unsafe {
+			// Safety: This struct is `repr(C)` and `N` is only ever used in a `PhantomData`.
+			transmute(self)
+		}
+	}
+
+	pub fn cast_marker_ref<N: ?Sized>(&self) -> &ArchetypeHandle<N> {
+		unsafe {
+			// Safety: This struct is `repr(C)` and `N` is only ever used in a `PhantomData`.
+			transmute(self)
+		}
+	}
+
+	pub fn cast_marker_mut<N: ?Sized>(&mut self) -> &mut ArchetypeHandle<N> {
+		unsafe {
+			// Safety: This struct is `repr(C)` and `N` is only ever used in a `PhantomData`.
+			transmute(self)
+		}
+	}
+
+	pub fn universe(&self) -> &UniverseProxy {
+		&self.universe
+	}
+
+	pub fn id(&self) -> ArchetypeId {
+		self.id
+	}
+}
+
+impl<M: ?Sized> Drop for ArchetypeHandle<M> {
+	fn drop(&mut self) {
+		let id = self.id;
+
+		self.universe
+			.add_flush_task(UniverseFlushTask::new(move |cx| {
+				cx.remove_archetype(id);
+			}));
+	}
 }
 
 // === ExclusiveUniverse === //
@@ -220,13 +376,13 @@ impl<'r> ExclusiveUniverse<'r> {
 		bundle: B,
 	) -> Entity {
 		self.universe_dangerous()
-			.archetype_mut::<B>()
+			.archetype::<B>()
 			.spawn_with_auto_cx(self, name, bundle)
 	}
 
 	pub fn despawn_bundle<B: BuildableArchetype + Bundle>(&mut self, target: Entity) -> B {
 		self.universe_dangerous()
-			.archetype_mut::<B>()
+			.archetype::<B>()
 			.despawn_and_extract_auto_cx(self, target)
 	}
 
@@ -310,18 +466,15 @@ impl<'r> ExclusiveUniverse<'r> {
 		self.universe_dangerous().comp_mut(target)
 	}
 
-	pub fn bypass_archetype<M>(&self) -> RwLockReadGuard<'r, Archetype<M>>
+	pub fn archetype_handle<M: ?Sized + BuildableArchetype>(&self) -> &'r ArchetypeHandle<M> {
+		self.universe_dangerous().resource()
+	}
+
+	pub fn bypass_archetype<M>(&self) -> MappedMutexGuard<'r, Archetype<M>>
 	where
 		M: ?Sized + BuildableArchetype + BypassExclusivity,
 	{
 		self.universe_dangerous().archetype()
-	}
-
-	pub fn bypass_archetype_mut<M>(&self) -> RwLockWriteGuard<'r, Archetype<M>>
-	where
-		M: ?Sized + BuildableArchetype + BypassExclusivity,
-	{
-		self.universe_dangerous().resource_mut()
 	}
 }
 
