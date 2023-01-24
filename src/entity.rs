@@ -1,20 +1,22 @@
 use derive_where::derive_where;
+use fnv::FnvBuildHasher;
 use hibitset::BitSet;
 use std::{
+	any::type_name,
 	collections::{HashMap, HashSet},
 	marker::PhantomData,
 	mem::transmute,
 	num::NonZeroU32,
 };
 
-use parking_lot::Mutex;
+use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 
 use crate::{
 	debug::{
 		label::{DebugLabel, NO_LABEL},
 		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
 	},
-	util::no_hash::RandIdGen,
+	util::{eventual_map::EventualMap, no_hash::RandIdGen, type_id::NamedTypeId},
 	Bundle, Dependent, ExclusiveUniverse,
 };
 
@@ -264,6 +266,107 @@ pub type ArchetypeMap<V> = HashMap<Dependent<ArchetypeId>, V, hashers::Archetype
 pub type ArchetypeSet = HashSet<Dependent<ArchetypeId>, hashers::ArchetypeBuildHasher>;
 pub type EntityMap<V> = HashMap<Dependent<ArchetypeId>, V, hashers::EntityBuildHasher>;
 pub type EntitySet = HashSet<Dependent<ArchetypeId>, hashers::EntityBuildHasher>;
+
+// === ArchetypeGroup === //
+
+#[derive(Debug, Default)]
+pub struct ArchetypeGroup {
+	type_map: EventualMap<NamedTypeId, ArchetypeId, FnvBuildHasher>,
+	id_map: EventualMap<ArchetypeId, Mutex<Archetype>, hashers::ArchetypeBuildHasher>,
+}
+
+impl ArchetypeGroup {
+	pub fn new() -> Self {
+		Self::default()
+	}
+
+	// === General === //
+
+	pub fn try_get_id_for_typed<M: ?Sized + 'static>(&self) -> Option<ArchetypeId> {
+		self.type_map.get(&NamedTypeId::of::<M>()).copied()
+	}
+
+	// === Synchronized === //
+
+	fn create_anonymous_inner<L: DebugLabel>(
+		id_map: &mut EventualMap<ArchetypeId, Mutex<Archetype>, hashers::ArchetypeBuildHasher>,
+		label: L,
+	) -> ArchetypeId {
+		let arch = Archetype::new(label);
+		let arch_id = arch.id();
+		id_map.insert(arch_id, Box::new(Mutex::new(arch)));
+		arch_id
+	}
+
+	pub fn create_anonymous<L: DebugLabel>(&mut self, label: L) -> ArchetypeId {
+		Self::create_anonymous_inner(&mut self.id_map, label)
+	}
+
+	pub fn id_for_typed<M: ?Sized + 'static>(&mut self) -> ArchetypeId {
+		let Self { type_map, id_map } = self;
+
+		*type_map.get_mut_or_create(NamedTypeId::of::<M>(), || {
+			Box::new(Self::create_anonymous_inner(id_map, type_name::<M>()))
+		})
+	}
+
+	pub fn by_id_mut<M: ?Sized>(&mut self, id: ArchetypeId) -> &mut Archetype<M> {
+		self.id_map
+			.get_mut(&id)
+			.unwrap()
+			.get_mut()
+			.cast_marker_mut()
+	}
+
+	pub fn try_by_type_mut<M: ?Sized + 'static>(&mut self) -> Option<&mut Archetype<M>> {
+		self.try_get_id_for_typed::<M>()
+			.map(|id| self.by_id_mut(id))
+	}
+
+	pub fn by_type_mut<M: ?Sized + 'static>(&mut self) -> &mut Archetype<M> {
+		let id = self.id_for_typed::<M>();
+		self.by_id_mut(id)
+	}
+
+	// === Synchronized === //
+
+	pub fn create_anonymous_async<L: DebugLabel>(&self, label: L) -> ArchetypeId {
+		let arch = Archetype::new(label);
+		let arch_id = arch.id();
+		self.id_map.add(arch_id, Box::new(Mutex::new(arch)));
+		arch_id
+	}
+
+	pub fn id_for_typed_async<M: ?Sized + 'static>(&self) -> ArchetypeId {
+		*self.type_map.get_or_create(NamedTypeId::of::<M>(), || {
+			Box::new(self.create_anonymous_async(type_name::<M>()))
+		})
+	}
+
+	pub fn by_id<M: ?Sized>(&self, id: ArchetypeId) -> MappedMutexGuard<'_, Archetype<M>> {
+		MutexGuard::map(self.id_map[&id].try_lock().unwrap(), |arch| {
+			arch.cast_marker_mut()
+		})
+	}
+
+	pub fn try_by_type<M: ?Sized + 'static>(&mut self) -> Option<&mut Archetype<M>> {
+		self.try_get_id_for_typed::<M>()
+			.map(|id| self.by_id_mut(id))
+	}
+
+	pub fn by_type_async<M: ?Sized + 'static>(&mut self) -> MappedMutexGuard<'_, Archetype<M>> {
+		self.by_id(self.id_for_typed_async::<M>())
+	}
+
+	// TODO: `get_sync()`
+
+	// === Lifecycle === //
+
+	pub fn flush(&mut self) {
+		self.id_map.flush();
+		self.type_map.flush();
+	}
+}
 
 // === Tests === //
 

@@ -31,6 +31,8 @@ where
 	V: ?Sized,
 	S: Default + BuildHasher,
 {
+	// === Multi-threaded === //
+
 	pub fn get<Q>(&self, key: &Q) -> Option<&V>
 	where
 		Q: ?Sized + hash::Hash + Eq,
@@ -125,15 +127,6 @@ where
 		}
 	}
 
-	pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
-	where
-		Q: ?Sized + hash::Hash + Eq,
-		K: Borrow<Q>,
-	{
-		self.flush();
-		self.established.get_mut(key).map(|b| &mut **b)
-	}
-
 	pub fn add(&self, key: K, value: Box<V>) -> &V {
 		let mut created = false;
 		let value = self.get_or_create(key, || {
@@ -144,6 +137,13 @@ where
 		value
 	}
 
+	// === Synchronized === //
+
+	pub fn insert(&mut self, key: K, value: Box<V>) -> Option<Box<V>> {
+		self.flush();
+		self.established.insert(key, value)
+	}
+
 	pub fn remove<Q>(&mut self, key: &Q) -> Option<Box<V>>
 	where
 		Q: ?Sized + hash::Hash + Eq,
@@ -151,6 +151,23 @@ where
 	{
 		self.flush();
 		self.established.remove(key)
+	}
+
+	pub fn get_mut_or_create<F>(&mut self, key: K, f: F) -> &mut V
+	where
+		F: FnOnce() -> Box<V>,
+	{
+		self.flush();
+		self.established.entry(key).or_insert_with(f)
+	}
+
+	pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
+	where
+		Q: ?Sized + hash::Hash + Eq,
+		K: Borrow<Q>,
+	{
+		self.flush();
+		self.established.get_mut(key).map(|b| &mut **b)
 	}
 
 	pub fn flush(&mut self) {

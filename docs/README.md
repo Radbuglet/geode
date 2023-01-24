@@ -66,7 +66,7 @@ println!("Player {my_player:?} is at {:?}", positions[my_player]);
 positions[my_player][1] = 3.;
 
 if let Some(position) = positions.get(my_zombie) {
-	println!("Zombie {my_zombie:?} has a position component.");
+    println!("Zombie {my_zombie:?} has a position component.");
 }
 ```
 
@@ -77,25 +77,25 @@ use geode::Query;
 
 // You can query over storages one archetype at a time.
 for (player, pos, name) in (&mut positions, &names).query_in(players.id()) {
-	pos[1] -= 9.8;
-	println!("{player:?} with name {name:?} has been updated.");
+    pos[1] -= 9.8;
+    println!("{player:?} with name {name:?} has been updated.");
 }
 
 for (zombie, &ai_goal) in (&ai_goals,).query_in(zombies.id()) {
-	if let Some(goal) = ai_goals {
-		println!("{zombie:?} is chasing {goal:?} at {:?}", positions[goal]);
-	}
+    if let Some(goal) = ai_goals {
+        println!("{zombie:?} is chasing {goal:?} at {:?}", positions[goal]);
+    }
 }
 
 let archetypes_needing_updating = vec![
-	players.id(),  // `ArchetypeId` is also `Copy`.
-	zombies.id(),
+    players.id(),  // `ArchetypeId` is also `Copy`.
+    zombies.id(),
 ];
 
 for &arch_id in &archetypes_needing_updating {
-	for (target, pos) in (&mut positions,).query_in(arch_id) {
-		// ...
-	}
+    for (target, pos) in (&mut positions,).query_in(arch_id) {
+        // ...
+    }
 }
 ```
 
@@ -112,7 +112,7 @@ zombies.despawn(my_zombie);
 
 // There is no flushing required for spawning or despawning entities.
 for (zombie, &pos) in (&positions,).query_in(zombies.id()) {
-	unreachable!();  // all our zombies are gone.
+    unreachable!();  // all our zombies are gone.
 }
 ```
 
@@ -148,7 +148,21 @@ let is_condemned = my_player.is_condemned();
 assert!(is_condemned == cfg!(debug_assertions));
 ```
 
+#### Archetype Maps
+
+==TODO: Document archetype maps.==
+
+#### Owned Entity
+
+==TODO: Document owned entities.==
+
+#### Bundles
+
 ==TODO: Document bundles.==
+
+#### Archetype Groups
+
+==TODO: Document archetype groups.==
 
 ### Universes
 
@@ -160,7 +174,7 @@ Although the previous paragraph would suggest that all forms of global state are
 
 You get these benefits without losing opportunities for multi-threading thanks to the `ShardedStorage` wrapper, which allows you to access components from different archetypes concurrently on different threads so long as you can prove exclusive access to that archetype through a mutable reference to the `Archetype`.
 
-There is also the occasional argument for placing `Archetypes` into the `Universe`—usually convenience since there really isn't a good architectural argument for why putting them elsewhere can be harmful. Doing this, however, is quite rare and support is somewhat limited out of the box (e.g. you can't easily add metadata to the archetype in its constructor without going through a locked universe resource).
+There is also the occasional argument for placing `Archetypes` into the `Universe`—usually convenience since there really isn't a good architectural argument for why putting them elsewhere can be harmful. Doing this, however, is quite rare and support is somewhat limited out of the box (e.g. you can't easily add metadata to the archetype in its constructor without going through a locked universe resource). It is much more common to see `Archetypes` stored directly in other components, whether that be directly or through an `ArchetypeGroup`.
 
 But that's enough rambling! Here's how to use a `Universe` to access resources:
 
@@ -169,8 +183,8 @@ use geode::{
     Universe,
     universe::{
         BuildableArchetype,
-    	BuildableResource,
-    	BuildableResourceRw,
+        BuildableResource,
+        BuildableResourceRw,
     },
 };
 use std::time::Instant;
@@ -214,10 +228,10 @@ let mut zombies = universe.archetype_mut::<ZombieBundle>();
 let my_zombie = players.spawn_with(
     "my zombie",
     (&mut positions, &mut ai_goals),
-	ZombieBundle {
+    ZombieBundle {
         position: [0.0, 1.0, 0.0],
         ai_goal: Some(my_player),
-	},
+    },
 );
 
 // We can also access global resources, although this use-case is
@@ -277,7 +291,7 @@ fn process_scene(universe: &mut ExclusiveUniverse, engine: Entity, scene: Entity
     // You can use the `Universe`'s regular borrowing methods to borrow
     // non-`BypassExclusivity` components...
     {
-    	let mut my_service = &mut universe.storage_mut::<SomeEngineService>()[engine];
+        let mut my_service = &mut universe.storage_mut::<SomeEngineService>()[engine];
         my_service.do_something();
         // Note, however, that this borrow must be dropped before reborrowing
         // `ExclusiveUniverse` mutably again.

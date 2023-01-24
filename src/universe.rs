@@ -118,9 +118,9 @@ impl Universe {
 
 	// === Exclusive helpers === //
 
-	pub fn spawn_bundle<B: BuildableArchetype + Bundle, L: DebugLabel>(
+	pub fn spawn_bundle<B: BuildableArchetype + Bundle>(
 		&mut self,
-		name: L,
+		name: impl DebugLabel,
 		bundle: B,
 	) -> Entity {
 		self.as_exclusive().spawn_bundle(name, bundle)
@@ -214,9 +214,9 @@ impl<'r> ExclusiveUniverse<'r> {
 
 	// === Exclusive helpers === //
 
-	pub fn spawn_bundle<B: BuildableArchetype + Bundle, L: DebugLabel>(
+	pub fn spawn_bundle<B: BuildableArchetype + Bundle>(
 		&mut self,
-		name: L,
+		name: impl DebugLabel,
 		bundle: B,
 	) -> Entity {
 		self.universe_dangerous()
