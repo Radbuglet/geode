@@ -1,5 +1,4 @@
 use derive_where::derive_where;
-use hibitset::BitSet;
 use std::{
 	collections::{HashMap, HashSet},
 	marker::PhantomData,
@@ -14,7 +13,8 @@ use crate::{
 		label::{DebugLabel, NO_LABEL},
 		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
 	},
-	Bundle, Dependent, ExclusiveUniverse, util::no_hash::RandIdGen,
+	util::{free_list::FreeList, no_hash::RandIdGen},
+	Bundle, Dependent, ExclusiveUniverse,
 };
 
 // === Handles === //
@@ -84,9 +84,25 @@ impl LifetimeLike for Entity {
 	}
 }
 
-// === Archetype === //
+// === ID allocation === //
 
-static ARCH_ID_FREE_LIST: Mutex<Option<RandIdGen>> = Mutex::new(None);
+static ID_FREE_LIST: Mutex<Option<RandIdGen>> = Mutex::new(None);
+
+fn alloc_id() -> NonZeroU32 {
+	ID_FREE_LIST
+		.lock()
+		.get_or_insert_with(Default::default)
+		.alloc()
+}
+
+fn dealloc_id(id: NonZeroU32) {
+	ID_FREE_LIST
+		.lock()
+		.get_or_insert_with(Default::default)
+		.dealloc(id);
+}
+
+// === Archetype === //
 
 #[derive_where(Debug)]
 #[repr(C)]
@@ -94,47 +110,22 @@ pub struct Archetype<M: ?Sized = ()> {
 	_ty: PhantomData<fn(M) -> M>,
 	id: NonZeroU32,
 	lifetime: OwnedLifetime<DebugLifetime>,
-	slots: Vec<Option<OwnedLifetime<DebugLifetime>>>,
-	free_slots: BitSet,
+	slots: FreeList<OwnedLifetime<DebugLifetime>>,
 }
 
 impl<M: ?Sized> Archetype<M> {
 	pub fn new<L: DebugLabel>(name: L) -> Self {
-		// Generate archetype ID
-		let id = ARCH_ID_FREE_LIST
-			.lock()
-			.get_or_insert_with(Default::default)
-			.alloc();
-
-		// Construct archetype
 		Self {
 			_ty: PhantomData,
-			id,
+			id: alloc_id(),
 			lifetime: OwnedLifetime::new(DebugLifetime::new(name)),
-			slots: Vec::new(),
-			free_slots: BitSet::new(),
+			slots: FreeList::default(),
 		}
 	}
 
 	pub fn spawn<L: DebugLabel>(&mut self, name: L) -> Entity {
-		// Construct a lifetime
 		let lifetime = DebugLifetime::new(name);
-
-		// Allocate a free slot
-		let slot = match (&self.free_slots).into_iter().next() {
-			Some(slot) => {
-				self.free_slots.remove(slot);
-				slot
-			}
-			None => {
-				let slot = self.slots.len() as u32;
-				assert_ne!(slot, u32::MAX, "spawned too many entities");
-
-				self.slots.push(None);
-				slot
-			}
-		};
-		self.slots[slot as usize] = Some(OwnedLifetime::new(lifetime));
+		let slot = self.slots.alloc(lifetime.into());
 
 		// Construct handle
 		Entity {
@@ -186,8 +177,7 @@ impl<M: ?Sized> Archetype<M> {
 			return;
 		}
 
-		self.free_slots.add(entity.slot);
-		self.slots[entity.slot_usize()] = None;
+		self.slots.dealloc(entity.slot);
 	}
 
 	pub fn despawn_and_extract(&mut self, cx: M::Context<'_>, entity: Entity) -> M
@@ -245,10 +235,7 @@ impl<M: ?Sized> Default for Archetype<M> {
 
 impl<M: ?Sized> Drop for Archetype<M> {
 	fn drop(&mut self) {
-		ARCH_ID_FREE_LIST
-			.lock()
-			.get_or_insert_with(Default::default)
-			.dealloc(self.id);
+		dealloc_id(self.id);
 	}
 }
 

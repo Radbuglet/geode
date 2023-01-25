@@ -148,23 +148,13 @@ let is_condemned = my_player.is_condemned();
 assert!(is_condemned == cfg!(debug_assertions));
 ```
 
-#### Archetype Maps
-
-==TODO: Document archetype maps.==
-
-#### Owned Entity
-
-==TODO: Document owned entities.==
-
 #### Bundles
 
 ==TODO: Document bundles.==
 
-#### Archetype Groups
-
-==TODO: Document archetype groups.==
-
 ### Universes
+
+==TODO: Update this section to reflect the newfound purposes of universes.==
 
 **Universes**, like *worlds* in traditional entity-component-systems, are a store of global state. However, unlike ECS worlds, universes typically only store `Storages`—that's it! It is very rare, although it is allowed, to store global state in the same way that you would store singletons as resources in an ECS world.
 
@@ -264,6 +254,10 @@ drop(counter);
 println!("The counter is now {}.", *universe.resource_ref::<Counter>)();
 ```
 
+#### Managed Archetypes
+
+==TODO: Document managed archetypes and their metadata.==
+
 #### Exclusive Universes
 
 When passing the `Universe` around—especially when passing it to dynamically dispatched function handlers—it can be pretty tricky to keep track of which resources have already been borrowed. Luckily, Geode provides a useful wrapper around `Universes` to make them much safer without compromising too much of their flexibility.
@@ -316,6 +310,10 @@ fn process_scene(universe: &mut ExclusiveUniverse, engine: Entity, scene: Entity
 ## Events
 
 ==TODO==
+
+#### Deletion
+
+==TODO: Document standard deletion mechanisms==
 
 #### Multi-Threading
 
