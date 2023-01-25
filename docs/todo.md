@@ -7,25 +7,28 @@
 - [x] Implement `WeakArchetypeMap`
 - [x] Implement universal archetype annotations
 - [ ] Implement `WeakEntity` as well
-- [ ] Implement method forms of these accessors
 - [ ] Add support for late-initialized and nested `bundle!` components
 - [ ] Allow `EventQueueIter` to be reiterated and polled on individual archetypes
+- [ ] Implement standard destruction model:
+  - [ ] Implement standard destructor traits and delegates
+  - [ ] Implement `OwnedEntity`
 
 ##### Convenience Extensions
 
-- [x] Singleton bundles
 - [x] Allow `bundles` to spawn from an `ExclusiveUniverse`
   - [x] Replace this feature with a method in the `Universe` to make it slightly safer
+- [x] Singleton bundles and entities
+  - [x] Move `bundle` to entity
+  - [ ] Implement `SingleEntity`
+  - [ ] Implement helper methods on universe
+- [ ] Add implicit conversions for identifiers
+- [ ] Implement method forms for universe accessors
 - [x] Implement dispatch utils:
   - [x] Mechanisms to make writing delegates easier (e.g. a `func!` macro)
   - [x] Method conversions in `func`
   - [x] Add return types to `func`
   - [ ] Ability to take `func` objects statically
 - [x] Implement `MappedStorage` and `StorageView` traits
-- [ ] Implement new destruction model:
-  - [ ] Implement standard destructor traits and delegates
-  - [ ] Implement `OwnedEntity`
-  - [ ] Implement `SingletonMap`
 - [ ] Improve `compost`:
   - [ ] Allow unlimited `Deref` chains
   - [ ] Allow users to define custom primary and backup data sources

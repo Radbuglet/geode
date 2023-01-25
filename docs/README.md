@@ -1,6 +1,6 @@
 # Geode
 
-A Scheduling-Flexible, Powerful ECS
+A Data-Oriented ECS-inspired Object Model for Rust
 
 ## Overview
 

@@ -16,7 +16,7 @@ use crate::{
 		lifetime::{DebugLifetime, FloatingLifetimeLike, Lifetime, LifetimeLike, OwnedLifetime},
 	},
 	util::{free_list::FreeList, no_hash::RandIdGen},
-	Bundle, Dependent, ExclusiveUniverse,
+	Dependent, ExclusiveUniverse, Storage,
 };
 
 // === Handles === //
@@ -482,50 +482,91 @@ impl<T> IndexMut<WeakArchetypeId> for WeakArchetypeMap<T> {
 	}
 }
 
-// === Tests === //
+// === Bundle === //
 
-#[cfg(test)]
-mod tests {
-	use super::*;
+pub trait Bundle: Sized {
+	type Context<'a>;
 
-	#[test]
-	fn ids_are_unique() {
-		// TODO: Trap on erroneous logs.
+	fn attach(self, cx: Self::Context<'_>, target: Entity);
 
-		let mut arch_1 = Archetype::<()>::new("Archetype 1");
-		let mut arch_2 = Archetype::<()>::new("Archetype 2");
+	fn detach(cx: Self::Context<'_>, target: Entity) -> Self;
 
-		assert_ne!(arch_1.id(), arch_2.id());
+	fn attach_auto_cx(self, cx: &mut ExclusiveUniverse, target: Entity);
 
-		let entity_1 = arch_1.spawn("Entity 1");
-		let entity_2 = arch_1.spawn("Entity 2");
-		let entity_3 = arch_2.spawn("Entity 3");
-		let entity_4 = arch_2.spawn("Entity 4");
+	fn detach_auto_cx(cx: &mut ExclusiveUniverse, target: Entity) -> Self;
+}
 
-		assert_eq!(entity_1.slot, 0);
-		assert_eq!(entity_2.slot, 1);
-		assert_eq!(entity_3.slot, 0);
-		assert_eq!(entity_4.slot, 1);
+#[derive(Debug, Copy, Clone, Default)]
+pub struct SingleBundle<T>(pub T);
 
-		arch_1.despawn(entity_1);
+impl<T: 'static + Send + Sync> Bundle for SingleBundle<T> {
+	type Context<'a> = &'a mut Storage<T>;
 
-		let entity_5 = arch_1.spawn("Entity 5");
-		assert_eq!(entity_5.slot, 0);
+	fn attach(self, storage: Self::Context<'_>, target: Entity) {
+		storage.add(target, self.0);
+	}
 
-		let entity_6 = arch_1.spawn("Entity 6");
-		assert_eq!(entity_6.slot, 2);
+	fn detach(storage: Self::Context<'_>, target: Entity) -> Self {
+		Self(storage.try_remove(target).unwrap())
+	}
 
-		assert!(!entity_1.lifetime.raw().unwrap().is_alive());
-		assert!(entity_2.lifetime.raw().unwrap().is_alive());
-		assert!(entity_3.lifetime.raw().unwrap().is_alive());
-		assert!(entity_4.lifetime.raw().unwrap().is_alive());
-		assert!(entity_5.lifetime.raw().unwrap().is_alive());
-		assert!(entity_6.lifetime.raw().unwrap().is_alive());
+	fn attach_auto_cx(self, cx: &mut ExclusiveUniverse, target: Entity) {
+		cx.storage_mut::<T>().add(target, self.0);
+	}
 
-		arch_2.despawn(entity_3);
-		assert!(!entity_3.lifetime.raw().unwrap().is_alive());
-
-		let entity_7 = arch_2.spawn("Entity 7");
-		assert_eq!(entity_7.slot, 0);
+	fn detach_auto_cx(cx: &mut ExclusiveUniverse, target: Entity) -> Self {
+		Self(cx.storage_mut::<T>().try_remove(target).unwrap())
 	}
 }
+
+#[macro_export]
+macro_rules! bundle {
+	($(
+		$(#[$attr_meta:meta])*
+		$vis:vis struct $name:ident {
+			$(
+				$(#[$field_meta:meta])*
+				$field_vis:vis $field:ident: $ty:ty
+			),*
+			$(,)?
+		}
+	)*) => {$(
+		$(#[$attr_meta])*
+		$vis struct $name {
+			$(
+				$(#[$field_meta])*
+				$field_vis $field: $ty
+			),*
+		}
+
+		impl $crate::Bundle for $name {
+			type Context<'a> = ($(&'a mut $crate::Storage<$ty>,)*);
+
+			#[allow(unused)]
+			fn attach(self, ($($field,)*): Self::Context<'_>, target: $crate::Entity) {
+				$( $field.add(target, self.$field); )*
+			}
+
+			#[allow(unused)]
+			fn detach(($($field,)*): Self::Context<'_>, target: $crate::Entity) -> Self {
+				$( let $field = $field.try_remove(target).unwrap(); )*
+
+				Self { $($field),* }
+			}
+
+			#[allow(unused)]
+			fn attach_auto_cx(self, cx: &mut $crate::ExclusiveUniverse, target: $crate::Entity) {
+				$( cx.storage_mut::<$ty>().add(target, self.$field); )*
+			}
+
+			#[allow(unused)]
+			fn detach_auto_cx(cx: &mut $crate::ExclusiveUniverse, target: $crate::Entity) -> Self {
+				$( let $field = cx.storage_mut::<$ty>().try_remove(target).unwrap(); )*
+
+				Self { $($field),* }
+			}
+		}
+	)*};
+}
+
+pub use bundle;

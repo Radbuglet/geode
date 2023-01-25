@@ -1,6 +1,5 @@
 #![allow(clippy::type_complexity)]
 
-pub mod bundle;
 pub mod debug;
 pub mod entity;
 pub mod event;
@@ -13,12 +12,11 @@ pub use {compost, parking_lot};
 
 pub mod prelude {
 	pub use crate::{
-		bundle::{bundle, Bundle},
 		compost::{decompose, Context},
 		debug::{label::NO_LABEL, lifetime::Dependent},
 		entity::{
-			Archetype, ArchetypeId, ArchetypeMap, ArchetypeSet, Entity, EntityMap, EntitySet,
-			WeakArchetypeId, WeakArchetypeMap,
+			bundle, Archetype, ArchetypeId, ArchetypeMap, ArchetypeSet, Bundle, Entity, EntityMap,
+			EntitySet, WeakArchetypeId, WeakArchetypeMap,
 		},
 		event::{func, injectors, DestroyQueue, EntityDestroyEvent, EventQueue, EventQueueIter},
 		query::Query,
