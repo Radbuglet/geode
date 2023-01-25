@@ -73,6 +73,21 @@ pub struct Lifetime {
 	gen: NonZeroU64,
 }
 
+impl hash::Hash for Lifetime {
+	fn hash<H: hash::Hasher>(&self, state: &mut H) {
+		(self.slot as *const SlotData).hash(state);
+		self.gen.hash(state);
+	}
+}
+
+impl Eq for Lifetime {}
+
+impl PartialEq for Lifetime {
+	fn eq(&self, other: &Self) -> bool {
+		(self.slot as *const SlotData) == other.slot && self.gen == other.gen
+	}
+}
+
 impl Lifetime {
 	pub fn new<L: DebugLabel>(name: L) -> Self {
 		let curr_name = name.reify();
@@ -252,6 +267,10 @@ mod debug_impl {
 			Self(Lifetime::new(name))
 		}
 
+		pub fn from_lifetime(lifetime: Lifetime) -> Self {
+			Self(lifetime)
+		}
+
 		pub fn is_possibly_alive(self) -> bool {
 			self.0.is_alive()
 		}
@@ -276,6 +295,12 @@ mod debug_impl {
 			Some(self.0)
 		}
 	}
+
+	impl From<Lifetime> for DebugLifetime {
+		fn from(lifetime: Lifetime) -> Self {
+			Self::from_lifetime(lifetime)
+		}
+	}
 }
 
 #[allow(dead_code)]
@@ -296,6 +321,12 @@ mod release_impl {
 			Self { _private: () }
 		}
 
+		pub fn from_lifetime(lifetime: Lifetime) -> Self {
+			let _ = lifetime;
+
+			Self { _private: () }
+		}
+
 		pub fn is_possibly_alive(self) -> bool {
 			true
 		}
@@ -312,6 +343,12 @@ mod release_impl {
 
 		pub fn raw(self) -> Option<Lifetime> {
 			None
+		}
+	}
+
+	impl From<Lifetime> for DebugLifetime {
+		fn from(lifetime: Lifetime) -> Self {
+			Self::from_lifetime(lifetime)
 		}
 	}
 }

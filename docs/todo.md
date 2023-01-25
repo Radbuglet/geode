@@ -2,15 +2,11 @@
 
 ##### Entity Model
 
-- [ ] Extend `Universe` back to its former glory:
-  - [ ] Implement `Managed` and `ManagedHandle`:
-    - [x] Implement removable archetype destructors
-    - [ ] Implement managed objects
-    - [ ] Implement a universe `Drop` handler for all this
-  - [ ] Implement a managed archetype
-  - [ ] Implement a managed archetype map
-  - [ ] Integrate with the `Universe`
-- [ ] Implement `WeakEntity`
+- [x] Implement archetype registry in `Universe`
+- [x] Implement `WeakArchetype`
+- [x] Implement `WeakArchetypeMap`
+- [ ] Implement `EventualWeakArchetypeMap` and integrate into universe
+- [ ] Implement `WeakEntity` as well
 - [ ] Implement method forms of these accessors
 - [ ] Add support for late-initialized and nested `bundle!` components
 - [ ] Allow `EventQueueIter` to be reiterated and polled on individual archetypes

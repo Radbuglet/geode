@@ -50,9 +50,9 @@ impl<T> FreeList<T> {
 		}
 	}
 
-	pub fn as_slice(&self) -> &[Option<T>] {
-		&self.slots
-	}
+	// pub fn as_slice(&self) -> &[Option<T>] {
+	// 	&self.slots
+	// }
 
 	// pub fn as_slice_mut(&mut self) -> &mut [Option<T>] {
 	// 	&mut self.slots

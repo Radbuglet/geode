@@ -15,11 +15,11 @@ use parking_lot::{
 use crate::{
 	debug::{
 		label::DebugLabel,
-		lifetime::{DebugLifetime, LifetimeLike},
+		lifetime::{Lifetime, LifetimeLike},
 	},
-	entity::hashers,
+	entity::{hashers, WeakArchetypeId},
 	func,
-	util::{eventual_map::EventualMap, free_list::FreeList, type_id::NamedTypeId},
+	util::{eventual_map::EventualMap, type_id::NamedTypeId},
 	Archetype, ArchetypeId, Bundle, Entity, Storage,
 };
 
@@ -28,14 +28,14 @@ use crate::{
 #[derive(Debug, Default)]
 pub struct Universe {
 	resources: EventualMap<NamedTypeId, dyn Any + Send + Sync, FnvBuildHasher>,
-	archetypes: EventualMap<ArchetypeId, ManagedArchetypeState, hashers::ArchetypeBuildHasher>,
+	archetypes: EventualMap<ArchetypeId, ManagedArchetype, hashers::ArchetypeBuildHasher>,
 	proxied: Arc<ProxyState>,
 }
 
 #[derive(Debug)]
-struct ManagedArchetypeState {
+struct ManagedArchetype {
+	lifetime: Lifetime,
 	archetype: Mutex<Archetype>,
-	destructors: Mutex<FreeList<ManagedArchetypeDtor>>,
 }
 
 #[derive(Debug, Default)]
@@ -127,26 +127,28 @@ impl Universe {
 		RwLockWriteGuard::map(self.storage_mut(), |storage| &mut storage[target])
 	}
 
-	// === Archetype Primitives === //
+	// === Archetypes === //
 
-	pub fn register_archetype<M: ?Sized>(&self, archetype: Archetype) -> ManagedArchetype<M> {
+	pub fn register_archetype<M: ?Sized>(&self, archetype: Archetype) -> ArchetypeHandle<M> {
 		let id = archetype.id();
+		let weak_id = archetype.weak_id();
+
 		self.archetypes.add(
 			id,
-			Box::new(ManagedArchetypeState {
+			Box::new(ManagedArchetype {
+				lifetime: archetype.lifetime(),
 				archetype: Mutex::new(archetype),
-				destructors: Default::default(),
 			}),
 		);
 
-		ManagedArchetype {
+		ArchetypeHandle {
 			_ty: PhantomData,
-			id,
+			id: weak_id,
 			universe: self.proxy(),
 		}
 	}
 
-	pub fn create_archetype<M: ?Sized>(&self, name: impl DebugLabel) -> ManagedArchetype<M> {
+	pub fn create_archetype<M: ?Sized>(&self, name: impl DebugLabel) -> ArchetypeHandle<M> {
 		self.register_archetype(Archetype::new(name))
 	}
 
@@ -158,73 +160,25 @@ impl Universe {
 
 		self.archetypes
 			.get(&id)
-			.map(|managed| managed.archetype.try_lock().unwrap())
+			.map(|arch| arch.archetype.try_lock().unwrap())
+	}
+
+	pub fn weak_archetype_id_for(&self, id: ArchetypeId) -> WeakArchetypeId {
+		WeakArchetypeId {
+			id: id.id,
+			lifetime: self.archetypes[&id].lifetime,
+		}
 	}
 
 	pub fn archetype_by_id(&self, id: ArchetypeId) -> MutexGuard<Archetype> {
 		self.try_archetype_by_id(id).unwrap()
 	}
 
-	pub fn add_archetype_dtor(
-		&self,
-		id: ArchetypeId,
-		handler: ManagedArchetypeDtor,
-	) -> ManagedDtorId {
-		if id.is_condemned() {
-			log::error!(
-				"Attached a destructor to a dead archetype with ID {id:?} in the universe."
-			);
-			// (fallthrough)
-		}
-
-		let dtor_id = self.archetypes[&id].destructors.lock().alloc(handler);
-
-		ManagedDtorId {
-			owning_lifetime: id.lifetime,
-			id: dtor_id,
-		}
-	}
-
-	pub fn remove_archetype_dtor(&self, id: ArchetypeId, dtor: ManagedDtorId) {
-		if id.is_condemned() {
-			log::error!(
-				"Attached a destructor to a dead archetype with ID {id:?} in the universe."
-			);
-			// (fallthrough)
-		}
-
-		if id.lifetime != dtor.owning_lifetime {
-			log::error!(
-				"Attempted to attach a destructor originating from lifetime {dtor:?}; \
-				 different from the real archetype {id:?}."
-			);
-			// (fallthrough)
-		}
-
-		self.archetypes[&id].destructors.lock().dealloc(dtor.id);
-	}
-
 	pub fn remove_archetype(&mut self, id: ArchetypeId) -> Archetype {
-		let mut managed = self.archetypes.remove(&id).unwrap();
-
-		for task in managed.destructors.get_mut().as_slice() {
-			let Some(task) = task else {
-				continue;
-			};
-
-			task(self, managed.archetype.get_mut());
-		}
-
-		managed.archetype.into_inner()
+		self.archetypes.remove(&id).unwrap().archetype.into_inner()
 	}
 
-	// === Archetype Meta === //
-
-	// TODO
-
-	// === Archetype Aliases === //
-
-	pub fn archetype_handle<M: ?Sized + BuildableArchetype>(&self) -> &ManagedArchetype<M> {
+	pub fn archetype_handle<M: ?Sized + BuildableArchetype>(&self) -> &ArchetypeHandle<M> {
 		self.resource()
 	}
 
@@ -278,10 +232,6 @@ func! {
 	pub fn UniverseFlushTask(cx: &mut Universe)
 }
 
-func! {
-	pub fn ManagedArchetypeDtor(cx: &mut Universe, arch: &mut Archetype)
-}
-
 // === Resource Traits === //
 
 pub trait BuildableResource: 'static + Sized + Send + Sync {
@@ -293,7 +243,7 @@ pub trait BuildableResourceRw: 'static + Sized + Send + Sync {
 }
 
 pub trait BuildableArchetype: 'static {
-	fn create(universe: &Universe) -> ManagedArchetype<Self> {
+	fn create(universe: &Universe) -> ArchetypeHandle<Self> {
 		universe.create_archetype(type_name::<Self>())
 	}
 }
@@ -304,7 +254,7 @@ impl<T: BuildableResourceRw> BuildableResource for RwLock<T> {
 	}
 }
 
-impl<M: ?Sized + BuildableArchetype> BuildableResource for ManagedArchetype<M> {
+impl<M: ?Sized + BuildableArchetype> BuildableResource for ArchetypeHandle<M> {
 	fn create(universe: &Universe) -> Self {
 		M::create(universe)
 	}
@@ -332,32 +282,32 @@ impl UniverseProxy {
 	}
 }
 
-// === Managed === //
+// === ArchetypeHandle === //
 
 #[derive(Debug, Clone)]
 #[repr(C)]
-pub struct ManagedArchetype<M: ?Sized = ()> {
+pub struct ArchetypeHandle<M: ?Sized = ()> {
 	_ty: PhantomData<fn(M) -> M>,
 	universe: UniverseProxy,
-	id: ArchetypeId,
+	id: WeakArchetypeId,
 }
 
-impl<M: ?Sized> ManagedArchetype<M> {
-	pub fn cast_marker<N: ?Sized>(self) -> ManagedArchetype<N> {
+impl<M: ?Sized> ArchetypeHandle<M> {
+	pub fn cast_marker<N: ?Sized>(self) -> ArchetypeHandle<N> {
 		unsafe {
 			// Safety: This struct is `repr(C)` and `N` is only ever used in a `PhantomData`.
 			transmute(self)
 		}
 	}
 
-	pub fn cast_marker_ref<N: ?Sized>(&self) -> &ManagedArchetype<N> {
+	pub fn cast_marker_ref<N: ?Sized>(&self) -> &ArchetypeHandle<N> {
 		unsafe {
 			// Safety: This struct is `repr(C)` and `N` is only ever used in a `PhantomData`.
 			transmute(self)
 		}
 	}
 
-	pub fn cast_marker_mut<N: ?Sized>(&mut self) -> &mut ManagedArchetype<N> {
+	pub fn cast_marker_mut<N: ?Sized>(&mut self) -> &mut ArchetypeHandle<N> {
 		unsafe {
 			// Safety: This struct is `repr(C)` and `N` is only ever used in a `PhantomData`.
 			transmute(self)
@@ -368,26 +318,24 @@ impl<M: ?Sized> ManagedArchetype<M> {
 		&self.universe
 	}
 
-	pub fn id(&self) -> ArchetypeId {
+	pub fn weak_id(&self) -> WeakArchetypeId {
 		self.id
+	}
+
+	pub fn id(&self) -> ArchetypeId {
+		self.id.as_regular()
 	}
 }
 
-impl<M: ?Sized> Drop for ManagedArchetype<M> {
+impl<M: ?Sized> Drop for ArchetypeHandle<M> {
 	fn drop(&mut self) {
-		let id = self.id;
+		let id = self.id();
 
 		self.universe
 			.add_flush_task(UniverseFlushTask::new(move |cx| {
 				cx.remove_archetype(id);
 			}));
 	}
-}
-
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct ManagedDtorId {
-	owning_lifetime: DebugLifetime,
-	id: u32,
 }
 
 // === ExclusiveUniverse === //
@@ -518,7 +466,7 @@ impl<'r> ExclusiveUniverse<'r> {
 		self.universe_dangerous().comp_mut(target)
 	}
 
-	pub fn archetype_handle<M: ?Sized + BuildableArchetype>(&self) -> &'r ManagedArchetype<M> {
+	pub fn archetype_handle<M: ?Sized + BuildableArchetype>(&self) -> &'r ArchetypeHandle<M> {
 		self.universe_dangerous().resource()
 	}
 

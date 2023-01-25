@@ -1,9 +1,11 @@
 use derive_where::derive_where;
 use std::{
+	any::type_name,
 	collections::{HashMap, HashSet},
 	marker::PhantomData,
 	mem::transmute,
 	num::NonZeroU32,
+	ops::{Index, IndexMut},
 };
 
 use parking_lot::Mutex;
@@ -11,7 +13,7 @@ use parking_lot::Mutex;
 use crate::{
 	debug::{
 		label::{DebugLabel, NO_LABEL},
-		lifetime::{DebugLifetime, LifetimeLike, OwnedLifetime},
+		lifetime::{DebugLifetime, Lifetime, LifetimeLike, OwnedLifetime},
 	},
 	util::{free_list::FreeList, no_hash::RandIdGen},
 	Bundle, Dependent, ExclusiveUniverse,
@@ -32,6 +34,43 @@ impl ArchetypeId {
 }
 
 impl LifetimeLike for ArchetypeId {
+	fn is_possibly_alive(self) -> bool {
+		self.lifetime.is_possibly_alive()
+	}
+
+	fn is_condemned(self) -> bool {
+		self.lifetime.is_condemned()
+	}
+
+	fn inc_dep(self) {
+		self.lifetime.inc_dep();
+	}
+
+	fn dec_dep(self) {
+		self.lifetime.dec_dep();
+	}
+}
+
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub struct WeakArchetypeId {
+	pub lifetime: Lifetime,
+	pub id: NonZeroU32,
+}
+
+impl WeakArchetypeId {
+	pub fn as_regular(self) -> ArchetypeId {
+		ArchetypeId {
+			lifetime: self.lifetime.into(),
+			id: self.id,
+		}
+	}
+
+	pub fn as_dependent(self) -> Dependent<Self> {
+		LifetimeLike::as_dependent(self)
+	}
+}
+
+impl LifetimeLike for WeakArchetypeId {
 	fn is_possibly_alive(self) -> bool {
 		self.lifetime.is_possibly_alive()
 	}
@@ -109,7 +148,7 @@ fn dealloc_id(id: NonZeroU32) {
 pub struct Archetype<M: ?Sized = ()> {
 	_ty: PhantomData<fn(M) -> M>,
 	id: NonZeroU32,
-	lifetime: OwnedLifetime<DebugLifetime>,
+	lifetime: OwnedLifetime<Lifetime>,
 	slots: FreeList<OwnedLifetime<DebugLifetime>>,
 }
 
@@ -118,7 +157,7 @@ impl<M: ?Sized> Archetype<M> {
 		Self {
 			_ty: PhantomData,
 			id: alloc_id(),
-			lifetime: OwnedLifetime::new(DebugLifetime::new(name)),
+			lifetime: OwnedLifetime::new(Lifetime::new(name)),
 			slots: FreeList::default(),
 		}
 	}
@@ -200,9 +239,20 @@ impl<M: ?Sized> Archetype<M> {
 
 	pub fn id(&self) -> ArchetypeId {
 		ArchetypeId {
+			lifetime: self.lifetime.get().into(),
+			id: self.id,
+		}
+	}
+
+	pub fn weak_id(&self) -> WeakArchetypeId {
+		WeakArchetypeId {
 			lifetime: self.lifetime.get(),
 			id: self.id,
 		}
+	}
+
+	pub fn lifetime(&self) -> Lifetime {
+		self.lifetime.get()
 	}
 
 	pub fn cast_marker<N: ?Sized>(self) -> Archetype<N> {
@@ -250,6 +300,176 @@ pub type ArchetypeMap<V> = HashMap<Dependent<ArchetypeId>, V, hashers::Archetype
 pub type ArchetypeSet = HashSet<Dependent<ArchetypeId>, hashers::ArchetypeBuildHasher>;
 pub type EntityMap<V> = HashMap<Dependent<ArchetypeId>, V, hashers::EntityBuildHasher>;
 pub type EntitySet = HashSet<Dependent<ArchetypeId>, hashers::EntityBuildHasher>;
+
+// === Weak Maps === //
+
+#[derive(Debug, Clone)]
+#[derive_where(Default)]
+pub struct WeakArchetypeMap<T> {
+	map: HashMap<NonZeroU32, (Lifetime, T), hashers::ArchetypeBuildHasher>,
+}
+
+impl<T> WeakArchetypeMap<T> {
+	pub fn new() -> Self {
+		Self::default()
+	}
+
+	pub fn add(&mut self, id: WeakArchetypeId, value: T) -> Option<T> {
+		let old = self.insert(id, value);
+
+		if cfg!(debug_assertions) && old.is_some() {
+			log::warn!(
+				"`.add`'ed a component of type {} to an archetype {:?} that already had the component. \
+			     Use `.insert` instead if you wish to replace pre-existing components silently.",
+				type_name::<T>(),
+				id
+			);
+			// (fallthrough)
+		}
+
+		old
+	}
+
+	pub fn insert(&mut self, id: WeakArchetypeId, value: T) -> Option<T> {
+		// Ensure that this is the latest lifetime in its respective slot.
+		if !id.lifetime.is_alive() {
+			return None;
+		}
+
+		// Ensure that we won't grow the map if we insert a new entry by garbage
+		// collecting where necessary.
+		if self.map.len() >= self.map.capacity() {
+			let old_len = self.map.len();
+			self.gc();
+
+			if self.map.len() == old_len {
+				self.map.reserve(1);
+			}
+		}
+
+		// Otherwise, just do the insertion normally.
+		self.map
+			.insert(id.id, (id.lifetime, value))
+			.and_then(Self::filter_old_entries(id.lifetime))
+	}
+
+	pub fn try_remove(&mut self, id: WeakArchetypeId) -> Option<T> {
+		// Dead archetypes technically map to none.
+		if !id.lifetime.is_alive() {
+			return None;
+		}
+
+		self.map
+			.remove(&id.id)
+			.and_then(Self::filter_old_entries(id.lifetime))
+	}
+
+	pub fn get(&self, id: WeakArchetypeId) -> Option<&T> {
+		if !id.lifetime.is_alive() {
+			return None;
+		}
+
+		self.map.get(&id.id).and_then(|(lt, value)| {
+			if *lt == id.lifetime {
+				Some(value)
+			} else {
+				None
+			}
+		})
+	}
+
+	pub fn get_mut(&mut self, id: WeakArchetypeId) -> Option<&mut T> {
+		if !id.lifetime.is_alive() {
+			return None;
+		}
+
+		self.map.get_mut(&id.id).and_then(|(lt, value)| {
+			if *lt == id.lifetime {
+				Some(value)
+			} else {
+				None
+			}
+		})
+	}
+
+	pub fn has(&self, id: WeakArchetypeId) -> bool {
+		self.get(id).is_some()
+	}
+
+	fn filter_old_entries(latest: Lifetime) -> impl FnOnce((Lifetime, T)) -> Option<T> {
+		move |(old_lt, value)| {
+			// Filter out old values.
+			if latest == old_lt {
+				Some(value)
+			} else {
+				None
+			}
+		}
+	}
+
+	pub fn iter(&self) -> impl Iterator<Item = (WeakArchetypeId, &T)> + '_ {
+		self.map.iter().filter_map(|(id, (lifetime, value))| {
+			if lifetime.is_alive() {
+				Some((
+					WeakArchetypeId {
+						lifetime: *lifetime,
+						id: *id,
+					},
+					value,
+				))
+			} else {
+				None
+			}
+		})
+	}
+
+	pub fn iter_mut(&mut self) -> impl Iterator<Item = (WeakArchetypeId, &mut T)> + '_ {
+		self.gc();
+		self.map.iter_mut().map(|(id, (lifetime, value))| {
+			(
+				WeakArchetypeId {
+					lifetime: *lifetime,
+					id: *id,
+				},
+				value,
+			)
+		})
+	}
+
+	pub fn keys(&self) -> impl Iterator<Item = WeakArchetypeId> + '_ {
+		self.iter().map(|(k, _)| k)
+	}
+
+	pub fn values(&self) -> impl Iterator<Item = &T> + '_ {
+		self.iter().map(|(_, v)| v)
+	}
+
+	pub fn values_mut(&mut self) -> impl Iterator<Item = &mut T> + '_ {
+		self.iter_mut().map(|(_, v)| v)
+	}
+
+	pub fn clear(&mut self) {
+		self.map.clear();
+	}
+
+	pub fn gc(&mut self) {
+		self.map.retain(|_, (lt, _)| lt.is_alive())
+	}
+}
+
+impl<T> Index<WeakArchetypeId> for WeakArchetypeMap<T> {
+	type Output = T;
+
+	fn index(&self, id: WeakArchetypeId) -> &Self::Output {
+		self.get(id).unwrap()
+	}
+}
+
+impl<T> IndexMut<WeakArchetypeId> for WeakArchetypeMap<T> {
+	fn index_mut(&mut self, id: WeakArchetypeId) -> &mut Self::Output {
+		self.get_mut(id).unwrap()
+	}
+}
 
 // === Tests === //
 
