@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 use crate::{
 	debug::{
 		label::{DebugLabel, NO_LABEL},
-		lifetime::{DebugLifetime, Lifetime, LifetimeLike, OwnedLifetime},
+		lifetime::{DebugLifetime, FloatingLifetimeLike, Lifetime, LifetimeLike, OwnedLifetime},
 	},
 	util::{free_list::FreeList, no_hash::RandIdGen},
 	Bundle, Dependent, ExclusiveUniverse,
@@ -29,11 +29,11 @@ pub struct ArchetypeId {
 
 impl ArchetypeId {
 	pub fn as_dependent(self) -> Dependent<Self> {
-		LifetimeLike::as_dependent(self)
+		FloatingLifetimeLike::as_dependent(self)
 	}
 }
 
-impl LifetimeLike for ArchetypeId {
+impl FloatingLifetimeLike for ArchetypeId {
 	fn is_possibly_alive(self) -> bool {
 		self.lifetime.is_possibly_alive()
 	}
@@ -66,11 +66,22 @@ impl WeakArchetypeId {
 	}
 
 	pub fn as_dependent(self) -> Dependent<Self> {
-		LifetimeLike::as_dependent(self)
+		FloatingLifetimeLike::as_dependent(self)
+	}
+
+	pub fn is_alive(self) -> bool {
+		self.lifetime.is_alive()
 	}
 }
 
 impl LifetimeLike for WeakArchetypeId {
+	fn is_alive(self) -> bool {
+		// Name resolution prioritizes inherent method of the same name.
+		self.is_alive()
+	}
+}
+
+impl FloatingLifetimeLike for WeakArchetypeId {
 	fn is_possibly_alive(self) -> bool {
 		self.lifetime.is_possibly_alive()
 	}
@@ -97,7 +108,7 @@ pub struct Entity {
 
 impl Entity {
 	pub fn as_dependent(self) -> Dependent<Self> {
-		LifetimeLike::as_dependent(self)
+		FloatingLifetimeLike::as_dependent(self)
 	}
 
 	pub fn slot_usize(&self) -> usize {
@@ -105,7 +116,7 @@ impl Entity {
 	}
 }
 
-impl LifetimeLike for Entity {
+impl FloatingLifetimeLike for Entity {
 	fn is_possibly_alive(self) -> bool {
 		self.lifetime.is_possibly_alive()
 	}

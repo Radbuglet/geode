@@ -385,7 +385,7 @@ impl PartialOrd for DebugLifetime {
 
 // === Wrapper traits === //
 
-pub trait LifetimeLike: Copy {
+pub trait FloatingLifetimeLike: Copy {
 	fn is_possibly_alive(self) -> bool;
 
 	fn is_condemned(self) -> bool;
@@ -399,11 +399,15 @@ pub trait LifetimeLike: Copy {
 	}
 }
 
-pub trait DestructibleLifetime: LifetimeLike {
+pub trait LifetimeLike: FloatingLifetimeLike {
+	fn is_alive(self) -> bool;
+}
+
+pub trait DestructibleLifetime: FloatingLifetimeLike {
 	fn destroy(self);
 }
 
-impl LifetimeLike for Lifetime {
+impl FloatingLifetimeLike for Lifetime {
 	fn is_possibly_alive(self) -> bool {
 		self.is_alive()
 	}
@@ -430,7 +434,7 @@ impl DestructibleLifetime for Lifetime {
 	}
 }
 
-impl LifetimeLike for DebugLifetime {
+impl FloatingLifetimeLike for DebugLifetime {
 	fn is_possibly_alive(self) -> bool {
 		// Name resolution prioritizes inherent method of the same name.
 		self.is_possibly_alive()
@@ -498,9 +502,9 @@ impl<L: DestructibleLifetime> Drop for OwnedLifetime<L> {
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Dependent<L: LifetimeLike>(L);
+pub struct Dependent<L: FloatingLifetimeLike>(L);
 
-impl<L: LifetimeLike> Dependent<L> {
+impl<L: FloatingLifetimeLike> Dependent<L> {
 	pub fn new(lifetime: L) -> Self {
 		lifetime.inc_dep();
 		Self(lifetime)
@@ -517,25 +521,25 @@ impl<L: LifetimeLike> Dependent<L> {
 	}
 }
 
-impl<L: LifetimeLike> Borrow<L> for Dependent<L> {
+impl<L: FloatingLifetimeLike> Borrow<L> for Dependent<L> {
 	fn borrow(&self) -> &L {
 		&self.0
 	}
 }
 
-impl<L: LifetimeLike> Clone for Dependent<L> {
+impl<L: FloatingLifetimeLike> Clone for Dependent<L> {
 	fn clone(&self) -> Self {
 		Self::new(self.get())
 	}
 }
 
-impl<L: LifetimeLike> From<L> for Dependent<L> {
+impl<L: FloatingLifetimeLike> From<L> for Dependent<L> {
 	fn from(value: L) -> Self {
 		Self::new(value)
 	}
 }
 
-impl<L: LifetimeLike> Drop for Dependent<L> {
+impl<L: FloatingLifetimeLike> Drop for Dependent<L> {
 	fn drop(&mut self) {
 		self.0.dec_dep();
 	}

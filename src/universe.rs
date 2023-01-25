@@ -3,7 +3,10 @@ use std::{
 	marker::PhantomData,
 	mem::{self, transmute},
 	ops::Deref,
-	sync::{Arc, Weak},
+	sync::{
+		atomic::{AtomicBool, Ordering::Relaxed},
+		Arc, Weak,
+	},
 };
 
 use fnv::FnvBuildHasher;
@@ -15,7 +18,7 @@ use parking_lot::{
 use crate::{
 	debug::{
 		label::DebugLabel,
-		lifetime::{Lifetime, LifetimeLike},
+		lifetime::{FloatingLifetimeLike, Lifetime},
 	},
 	entity::{hashers, WeakArchetypeId},
 	func,
@@ -29,13 +32,16 @@ use crate::{
 pub struct Universe {
 	resources: EventualMap<NamedTypeId, dyn Any + Send + Sync, FnvBuildHasher>,
 	archetypes: EventualMap<ArchetypeId, ManagedArchetype, hashers::ArchetypeBuildHasher>,
+	needs_flushing: Mutex<Vec<WeakArchetypeId>>,
 	proxied: Arc<ProxyState>,
 }
 
 #[derive(Debug)]
 struct ManagedArchetype {
 	lifetime: Lifetime,
+	meta: EventualMap<NamedTypeId, dyn Any + Send + Sync, FnvBuildHasher>,
 	archetype: Mutex<Archetype>,
+	needs_flushing: AtomicBool,
 }
 
 #[derive(Debug, Default)]
@@ -127,7 +133,7 @@ impl Universe {
 		RwLockWriteGuard::map(self.storage_mut(), |storage| &mut storage[target])
 	}
 
-	// === Archetypes === //
+	// === Archetype Management === //
 
 	pub fn register_archetype<M: ?Sized>(&self, archetype: Archetype) -> ArchetypeHandle<M> {
 		let id = archetype.id();
@@ -137,7 +143,9 @@ impl Universe {
 			id,
 			Box::new(ManagedArchetype {
 				lifetime: archetype.lifetime(),
+				meta: EventualMap::default(),
 				archetype: Mutex::new(archetype),
+				needs_flushing: AtomicBool::new(false),
 			}),
 		);
 
@@ -164,6 +172,11 @@ impl Universe {
 	}
 
 	pub fn weak_archetype_id_for(&self, id: ArchetypeId) -> WeakArchetypeId {
+		if id.is_condemned() {
+			log::error!("Upgraded a dead archetype ID {id:?} to a weak archetype ID.");
+			// (fallthrough)
+		}
+
 		WeakArchetypeId {
 			id: id.id,
 			lifetime: self.archetypes[&id].lifetime,
@@ -175,6 +188,11 @@ impl Universe {
 	}
 
 	pub fn remove_archetype(&mut self, id: ArchetypeId) -> Archetype {
+		if id.is_condemned() {
+			log::error!("Removed a dead archetype with ID {id:?} from the universe.");
+			// (fallthrough)
+		}
+
 		self.archetypes.remove(&id).unwrap().archetype.into_inner()
 	}
 
@@ -187,6 +205,52 @@ impl Universe {
 			self.archetype_by_id(self.archetype_handle::<M>().id()),
 			|arch| arch.cast_marker_mut(),
 		)
+	}
+
+	// === Archetype Annotations === //
+
+	pub fn annotate_archetype<T: 'static + Send + Sync>(&self, id: ArchetypeId, data: T) -> &T {
+		// Validate ID
+		if id.is_condemned() {
+			log::error!("Annotated a dead archetype with ID {id:?} in the universe.");
+			// (fallthrough)
+		}
+
+		// Flag for flushing
+		let arch = &self.archetypes[&id];
+
+		if arch
+			.needs_flushing
+			.compare_exchange(false, true, Relaxed, Relaxed)
+			.is_ok()
+		{
+			self.needs_flushing.lock().push(WeakArchetypeId {
+				lifetime: arch.lifetime,
+				id: id.id,
+			});
+		}
+
+		// Write metadata
+		arch.meta
+			.add(NamedTypeId::of::<T>(), Box::new(data))
+			.downcast_ref()
+			.unwrap()
+	}
+
+	pub fn try_archetype_meta<T: 'static>(&self, id: ArchetypeId) -> Option<&T> {
+		if id.is_condemned() {
+			log::error!("Acquired metadata from a dead archetype with ID {id:?} in the universe.");
+			// (fallthrough)
+		}
+
+		self.archetypes[&id]
+			.meta
+			.get(&NamedTypeId::of::<T>())
+			.map(|v| v.downcast_ref().unwrap())
+	}
+
+	pub fn archetype_meta<T: 'static>(&self, id: ArchetypeId) -> &T {
+		self.try_archetype_meta(id).unwrap()
 	}
 
 	// === Exclusive Helpers === //
@@ -217,6 +281,17 @@ impl Universe {
 		// Flush maps
 		self.resources.flush();
 		self.archetypes.flush();
+
+		// Flush archetype metadata
+		for arch_id in self.needs_flushing.get_mut().drain(..) {
+			if !arch_id.is_alive() {
+				continue;
+			}
+
+			let arch = &mut self.archetypes[&arch_id.as_regular()];
+			arch.meta.flush();
+			*arch.needs_flushing.get_mut() = false;
+		}
 
 		// Process handlers
 		let task_list = mem::take(&mut *self.proxied.flush_tasks.lock());
@@ -475,6 +550,10 @@ impl<'r> ExclusiveUniverse<'r> {
 		M: ?Sized + BuildableArchetype + BypassExclusivity,
 	{
 		self.universe_dangerous().archetype()
+	}
+
+	pub fn bypass_archetype_meta<T: 'static + BypassExclusivity>(&self, id: ArchetypeId) -> &'r T {
+		self.universe_dangerous().archetype_meta(id)
 	}
 }
 

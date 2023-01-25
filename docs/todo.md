@@ -5,7 +5,7 @@
 - [x] Implement archetype registry in `Universe`
 - [x] Implement `WeakArchetype`
 - [x] Implement `WeakArchetypeMap`
-- [ ] Implement `EventualWeakArchetypeMap` and integrate into universe
+- [x] Implement universal archetype annotations
 - [ ] Implement `WeakEntity` as well
 - [ ] Implement method forms of these accessors
 - [ ] Add support for late-initialized and nested `bundle!` components

@@ -3,7 +3,7 @@ use std::{any::type_name, collections::HashMap, fmt::Debug, num::NonZeroU32, ops
 use derive_where::derive_where;
 
 use crate::{
-	debug::lifetime::{DebugLifetime, Dependent, LifetimeLike},
+	debug::lifetime::{DebugLifetime, Dependent, FloatingLifetimeLike},
 	entity::hashers::ArchetypeBuildHasher,
 	query::{QueryIter, StorageIterMut, StorageIterRef},
 	ArchetypeId, Entity, Query,
