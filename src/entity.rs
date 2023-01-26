@@ -8,15 +8,16 @@ use std::{
 	ops::{Index, IndexMut},
 };
 
-use parking_lot::Mutex;
+use parking_lot::{MappedRwLockReadGuard, MappedRwLockWriteGuard, Mutex, MutexGuard};
 
 use crate::{
 	debug::{
 		label::{DebugLabel, NO_LABEL},
-		lifetime::{DebugLifetime, FloatingLifetimeLike, Lifetime, LifetimeLike, OwnedLifetime},
+		lifetime::{DebugLifetime, DebugLifetimeWrapper, Lifetime, LifetimeWrapper, OwnedLifetime},
 	},
 	util::{free_list::FreeList, no_hash::RandIdGen},
-	Dependent, ExclusiveUniverse, Storage,
+	BypassExclusivity, Dependent, ExclusiveUniverse, Storage, StorageView, StorageViewMut,
+	Universe,
 };
 
 // === Handles === //
@@ -28,26 +29,14 @@ pub struct ArchetypeId {
 }
 
 impl ArchetypeId {
-	pub fn as_dependent(self) -> Dependent<Self> {
-		FloatingLifetimeLike::as_dependent(self)
+	pub fn get_in_universe(self, universe: &Universe) -> MutexGuard<Archetype> {
+		universe.archetype_by_id(self)
 	}
 }
 
-impl FloatingLifetimeLike for ArchetypeId {
-	fn is_possibly_alive(self) -> bool {
-		self.lifetime.is_possibly_alive()
-	}
-
-	fn is_condemned(self) -> bool {
-		self.lifetime.is_condemned()
-	}
-
-	fn inc_dep(self) {
-		self.lifetime.inc_dep();
-	}
-
-	fn dec_dep(self) {
-		self.lifetime.dec_dep();
+impl DebugLifetimeWrapper for ArchetypeId {
+	fn as_debug_lifetime(me: Self) -> DebugLifetime {
+		me.lifetime
 	}
 }
 
@@ -65,37 +54,28 @@ impl WeakArchetypeId {
 		}
 	}
 
-	pub fn as_dependent(self) -> Dependent<Self> {
-		FloatingLifetimeLike::as_dependent(self)
+	pub fn try_as_regular(self) -> Option<ArchetypeId> {
+		self.filter_alive().map(Self::as_regular)
 	}
 
 	pub fn is_alive(self) -> bool {
-		self.lifetime.is_alive()
+		LifetimeWrapper::is_alive(self)
+	}
+
+	pub fn filter_alive(self) -> Option<Self> {
+		LifetimeWrapper::filter_alive(self)
 	}
 }
 
-impl LifetimeLike for WeakArchetypeId {
-	fn is_alive(self) -> bool {
-		// Name resolution prioritizes inherent method of the same name.
-		self.is_alive()
+impl LifetimeWrapper for WeakArchetypeId {
+	fn as_lifetime(me: Self) -> Lifetime {
+		me.lifetime
 	}
 }
 
-impl FloatingLifetimeLike for WeakArchetypeId {
-	fn is_possibly_alive(self) -> bool {
-		self.lifetime.is_possibly_alive()
-	}
-
-	fn is_condemned(self) -> bool {
-		self.lifetime.is_condemned()
-	}
-
-	fn inc_dep(self) {
-		self.lifetime.inc_dep();
-	}
-
-	fn dec_dep(self) {
-		self.lifetime.dec_dep();
+impl DebugLifetimeWrapper for WeakArchetypeId {
+	fn as_debug_lifetime(me: Self) -> DebugLifetime {
+		me.lifetime.into()
 	}
 }
 
@@ -107,30 +87,121 @@ pub struct Entity {
 }
 
 impl Entity {
-	pub fn as_dependent(self) -> Dependent<Self> {
-		FloatingLifetimeLike::as_dependent(self)
+	pub fn slot_usize(self) -> usize {
+		self.slot as usize
 	}
 
-	pub fn slot_usize(&self) -> usize {
-		self.slot as usize
+	pub fn get<T>(self, storage: &impl StorageView<Comp = T>) -> &T {
+		&storage[self]
+	}
+
+	pub fn get_mut<T>(self, storage: &mut impl StorageViewMut<Comp = T>) -> &mut T {
+		&mut storage[self]
+	}
+
+	pub fn comp_in_universe<T: 'static + Send + Sync>(
+		self,
+		universe: &Universe,
+	) -> MappedRwLockReadGuard<T> {
+		universe.comp(self)
+	}
+
+	pub fn comp_mut_in_universe<T: 'static + Send + Sync>(
+		self,
+		universe: &Universe,
+	) -> MappedRwLockWriteGuard<T> {
+		universe.comp_mut(self)
+	}
+
+	pub fn bypass_comp_in_universe<'r, T: 'static + Send + Sync + BypassExclusivity>(
+		self,
+		universe: &ExclusiveUniverse<'r>,
+	) -> MappedRwLockReadGuard<'r, T> {
+		universe.bypass_comp(self)
+	}
+
+	pub fn bypass_comp_mut_in_universe<'r, T: 'static + Send + Sync + BypassExclusivity>(
+		self,
+		universe: &ExclusiveUniverse<'r>,
+	) -> MappedRwLockWriteGuard<'r, T> {
+		universe.bypass_comp_mut(self)
 	}
 }
 
-impl FloatingLifetimeLike for Entity {
-	fn is_possibly_alive(self) -> bool {
-		self.lifetime.is_possibly_alive()
+impl DebugLifetimeWrapper for Entity {
+	fn as_debug_lifetime(me: Self) -> DebugLifetime {
+		me.lifetime
+	}
+}
+
+#[derive_where(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct SingleEntity<T> {
+	_ty: PhantomData<fn(T) -> T>,
+	entity: Entity,
+}
+
+impl<T> SingleEntity<T> {
+	pub fn wrap(entity: Entity) -> Self {
+		Self {
+			_ty: PhantomData,
+			entity,
+		}
 	}
 
-	fn is_condemned(self) -> bool {
-		self.lifetime.is_condemned()
+	pub fn as_entity(self) -> Entity {
+		self.entity
 	}
 
-	fn inc_dep(self) {
-		self.lifetime.inc_dep();
+	pub fn cast<U>(self) -> SingleEntity<U> {
+		SingleEntity::wrap(self.as_entity())
 	}
 
-	fn dec_dep(self) {
-		self.lifetime.dec_dep();
+	pub fn get<V: StorageView<Comp = T>>(self, storage: &V) -> &T {
+		&storage[self.as_entity()]
+	}
+
+	pub fn get_mut<V: StorageViewMut<Comp = T>>(self, storage: &mut V) -> &mut T {
+		&mut storage[self.as_entity()]
+	}
+
+	pub fn get_in_universe(self, universe: &Universe) -> MappedRwLockReadGuard<T>
+	where
+		T: 'static + Send + Sync,
+	{
+		universe.comp(self.as_entity())
+	}
+
+	pub fn get_mut_in_universe(self, universe: &Universe) -> MappedRwLockWriteGuard<T>
+	where
+		T: 'static + Send + Sync,
+	{
+		universe.comp_mut(self.as_entity())
+	}
+
+	pub fn bypass_get_in_universe<'r>(
+		self,
+		universe: &ExclusiveUniverse<'r>,
+	) -> MappedRwLockReadGuard<'r, T>
+	where
+		T: 'static + Send + Sync + BypassExclusivity,
+	{
+		universe.bypass_comp(self.as_entity())
+	}
+
+	pub fn bypass_get_mut_in_universe<'r>(
+		self,
+		universe: &ExclusiveUniverse<'r>,
+	) -> MappedRwLockWriteGuard<'r, T>
+	where
+		T: 'static + Send + Sync + BypassExclusivity,
+	{
+		universe.bypass_comp_mut(self.as_entity())
+	}
+}
+
+impl<T> DebugLifetimeWrapper for SingleEntity<T> {
+	fn as_debug_lifetime(me: Self) -> DebugLifetime {
+		me.entity.lifetime
 	}
 }
 

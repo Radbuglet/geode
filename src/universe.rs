@@ -18,7 +18,7 @@ use parking_lot::{
 use crate::{
 	debug::{
 		label::DebugLabel,
-		lifetime::{FloatingLifetimeLike, Lifetime},
+		lifetime::{DebugLifetimeWrapper, Lifetime},
 	},
 	entity::{hashers, WeakArchetypeId},
 	func,
@@ -387,6 +387,10 @@ impl<M: ?Sized> ArchetypeHandle<M> {
 			// Safety: This struct is `repr(C)` and `N` is only ever used in a `PhantomData`.
 			transmute(self)
 		}
+	}
+
+	pub fn get_in_universe(self, universe: &Universe) -> MutexGuard<Archetype> {
+		universe.archetype_by_id(self.id())
 	}
 
 	pub fn universe(&self) -> &UniverseProxy {

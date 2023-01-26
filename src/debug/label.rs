@@ -2,8 +2,16 @@ use std::{borrow::Cow, fmt};
 
 pub type ReifiedDebugLabel = Option<Cow<'static, str>>;
 
-pub trait DebugLabel {
+pub trait DebugLabel: Sized {
 	fn reify(self) -> ReifiedDebugLabel;
+
+	fn reify_if_debug(self) -> ReifiedDebugLabel {
+		if cfg!(debug_assertions) {
+			self.reify()
+		} else {
+			None
+		}
+	}
 }
 
 pub const NO_LABEL: Option<&'static str> = None;

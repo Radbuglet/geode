@@ -16,7 +16,7 @@ pub mod prelude {
 		debug::{label::NO_LABEL, lifetime::Dependent},
 		entity::{
 			bundle, Archetype, ArchetypeId, ArchetypeMap, ArchetypeSet, Bundle, Entity, EntityMap,
-			EntitySet, WeakArchetypeId, WeakArchetypeMap,
+			EntitySet, SingleBundle, SingleEntity, WeakArchetypeId, WeakArchetypeMap,
 		},
 		event::{func, injectors, DestroyQueue, EntityDestroyEvent, EventQueue, EventQueueIter},
 		query::Query,

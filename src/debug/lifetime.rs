@@ -385,46 +385,51 @@ impl PartialOrd for DebugLifetime {
 
 // === Wrapper traits === //
 
-pub trait FloatingLifetimeLike: Copy {
-	fn is_possibly_alive(self) -> bool;
+pub trait DebugLifetimeWrapper: Copy {
+	fn as_debug_lifetime(me: Self) -> DebugLifetime;
 
-	fn is_condemned(self) -> bool;
+	fn is_possibly_alive(self) -> bool {
+		Self::as_debug_lifetime(self).is_possibly_alive()
+	}
 
-	fn inc_dep(self);
-
-	fn dec_dep(self);
+	fn is_condemned(self) -> bool {
+		Self::as_debug_lifetime(self).is_condemned()
+	}
 
 	fn as_dependent(self) -> Dependent<Self> {
 		self.into()
 	}
 }
 
-pub trait LifetimeLike: FloatingLifetimeLike {
-	fn is_alive(self) -> bool;
+pub trait LifetimeWrapper: DebugLifetimeWrapper {
+	fn as_lifetime(me: Self) -> Lifetime;
+
+	fn is_alive(self) -> bool {
+		Self::as_lifetime(self).is_alive()
+	}
+
+	fn filter_alive(self) -> Option<Self> {
+		if self.is_alive() {
+			Some(self)
+		} else {
+			None
+		}
+	}
 }
 
-pub trait DestructibleLifetime: FloatingLifetimeLike {
+pub trait DestructibleLifetime: DebugLifetimeWrapper {
 	fn destroy(self);
 }
 
-impl FloatingLifetimeLike for Lifetime {
-	fn is_possibly_alive(self) -> bool {
-		self.is_alive()
+impl DebugLifetimeWrapper for Lifetime {
+	fn as_debug_lifetime(me: Self) -> DebugLifetime {
+		me.into()
 	}
+}
 
-	fn is_condemned(self) -> bool {
-		// Name resolution prioritizes inherent method of the same name.
-		self.is_condemned()
-	}
-
-	fn inc_dep(self) {
-		// Name resolution prioritizes inherent method of the same name.
-		self.inc_dep();
-	}
-
-	fn dec_dep(self) {
-		// Name resolution prioritizes inherent method of the same name.
-		self.dec_dep();
+impl LifetimeWrapper for Lifetime {
+	fn as_lifetime(me: Self) -> Lifetime {
+		me
 	}
 }
 
@@ -434,25 +439,9 @@ impl DestructibleLifetime for Lifetime {
 	}
 }
 
-impl FloatingLifetimeLike for DebugLifetime {
-	fn is_possibly_alive(self) -> bool {
-		// Name resolution prioritizes inherent method of the same name.
-		self.is_possibly_alive()
-	}
-
-	fn is_condemned(self) -> bool {
-		// Name resolution prioritizes inherent method of the same name.
-		self.is_condemned()
-	}
-
-	fn inc_dep(self) {
-		// Name resolution prioritizes inherent method of the same name.
-		self.inc_dep();
-	}
-
-	fn dec_dep(self) {
-		// Name resolution prioritizes inherent method of the same name.
-		self.dec_dep();
+impl DebugLifetimeWrapper for DebugLifetime {
+	fn as_debug_lifetime(me: Self) -> DebugLifetime {
+		me
 	}
 }
 
@@ -502,11 +491,11 @@ impl<L: DestructibleLifetime> Drop for OwnedLifetime<L> {
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Dependent<L: FloatingLifetimeLike>(L);
+pub struct Dependent<L: DebugLifetimeWrapper>(L);
 
-impl<L: FloatingLifetimeLike> Dependent<L> {
+impl<L: DebugLifetimeWrapper> Dependent<L> {
 	pub fn new(lifetime: L) -> Self {
-		lifetime.inc_dep();
+		L::as_debug_lifetime(lifetime).inc_dep();
 		Self(lifetime)
 	}
 
@@ -521,26 +510,26 @@ impl<L: FloatingLifetimeLike> Dependent<L> {
 	}
 }
 
-impl<L: FloatingLifetimeLike> Borrow<L> for Dependent<L> {
+impl<L: DebugLifetimeWrapper> Borrow<L> for Dependent<L> {
 	fn borrow(&self) -> &L {
 		&self.0
 	}
 }
 
-impl<L: FloatingLifetimeLike> Clone for Dependent<L> {
+impl<L: DebugLifetimeWrapper> Clone for Dependent<L> {
 	fn clone(&self) -> Self {
 		Self::new(self.get())
 	}
 }
 
-impl<L: FloatingLifetimeLike> From<L> for Dependent<L> {
+impl<L: DebugLifetimeWrapper> From<L> for Dependent<L> {
 	fn from(value: L) -> Self {
 		Self::new(value)
 	}
 }
 
-impl<L: FloatingLifetimeLike> Drop for Dependent<L> {
+impl<L: DebugLifetimeWrapper> Drop for Dependent<L> {
 	fn drop(&mut self) {
-		self.0.dec_dep();
+		L::as_debug_lifetime(self.0).dec_dep();
 	}
 }
