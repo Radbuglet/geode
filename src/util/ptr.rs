@@ -1,4 +1,11 @@
-use std::mem::{self, ManuallyDrop};
+use std::{
+	marker::PhantomData,
+	mem::{self, ManuallyDrop},
+	ops::Deref,
+	ptr::NonNull,
+};
+
+use derive_where::derive_where;
 
 // === Transmute === //
 
@@ -130,4 +137,29 @@ impl<T: ?Sized> HeapPointerExt for Box<T> {
 
 pub fn addr_of_ptr<T: ?Sized>(p: *const T) -> usize {
 	p.cast::<()>() as usize
+}
+
+// === ExtendedRef === //
+
+#[derive_where(Copy, Clone)]
+pub struct ExtendedRef<'a, T: ?Sized> {
+	_ty: PhantomData<&'a ()>,
+	ptr: NonNull<T>,
+}
+
+impl<'a, T: ?Sized> From<&'a T> for ExtendedRef<'a, T> {
+	fn from(value: &'a T) -> Self {
+		Self {
+			_ty: PhantomData,
+			ptr: NonNull::from(value),
+		}
+	}
+}
+
+impl<'a, T: ?Sized> Deref for ExtendedRef<'a, T> {
+	type Target = T;
+
+	fn deref(&self) -> &Self::Target {
+		unsafe { self.ptr.as_ref() }
+	}
 }

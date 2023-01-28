@@ -23,7 +23,7 @@ use crate::{
 	entity::{hashers, WeakArchetypeId},
 	func,
 	util::{eventual_map::EventualMap, type_id::NamedTypeId},
-	Archetype, ArchetypeId, Bundle, Entity, Storage,
+	Archetype, ArchetypeId, Bundle, Entity, SingleBundle, SingleEntity, Storage,
 };
 
 // === Universe === //
@@ -255,16 +255,16 @@ impl Universe {
 
 	// === Exclusive Helpers === //
 
-	pub fn spawn_bundle<B: BuildableArchetype + Bundle>(
+	pub fn spawn_bundled<B: BuildableArchetype + Bundle>(
 		&mut self,
 		name: impl DebugLabel,
 		bundle: B,
 	) -> Entity {
-		self.as_exclusive().spawn_bundle(name, bundle)
+		self.as_exclusive().spawn_bundled(name, bundle)
 	}
 
-	pub fn despawn_bundle<B: BuildableArchetype + Bundle>(&mut self, target: Entity) -> B {
-		self.as_exclusive().despawn_bundle(target)
+	pub fn despawn_bundled<B: BuildableArchetype + Bundle>(&mut self, target: Entity) -> B {
+		self.as_exclusive().despawn_bundled(target)
 	}
 
 	// === Flushing === //
@@ -449,7 +449,7 @@ impl<'r> ExclusiveUniverse<'r> {
 
 	// === Exclusive helpers === //
 
-	pub fn spawn_bundle<B: BuildableArchetype + Bundle>(
+	pub fn spawn_bundled<B: BuildableArchetype + Bundle>(
 		&mut self,
 		name: impl DebugLabel,
 		bundle: B,
@@ -459,10 +459,26 @@ impl<'r> ExclusiveUniverse<'r> {
 			.spawn_with_auto_cx(self, name, bundle)
 	}
 
-	pub fn despawn_bundle<B: BuildableArchetype + Bundle>(&mut self, target: Entity) -> B {
+	pub fn spawn_bundled_single<T: 'static + Send + Sync>(
+		&mut self,
+		name: impl DebugLabel,
+		value: T,
+	) -> SingleEntity<T> {
+		SingleEntity::new(self.spawn_bundled(name, SingleBundle(value)))
+	}
+
+	pub fn despawn_bundled<B: BuildableArchetype + Bundle>(&mut self, target: Entity) -> B {
 		self.universe_dangerous()
 			.archetype::<B>()
 			.despawn_and_extract_auto_cx(self, target)
+	}
+
+	pub fn despawn_bundled_single<T: 'static + Send + Sync>(
+		&mut self,
+		target: SingleEntity<T>,
+	) -> T {
+		self.despawn_bundled::<SingleBundle<T>>(target.as_entity())
+			.0
 	}
 
 	// === Bypasses === //

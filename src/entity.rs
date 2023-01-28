@@ -15,6 +15,7 @@ use crate::{
 		label::{DebugLabel, NO_LABEL},
 		lifetime::{DebugLifetime, DebugLifetimeWrapper, Lifetime, LifetimeWrapper, OwnedLifetime},
 	},
+	universe::BuildableArchetype,
 	util::{free_list::FreeList, no_hash::RandIdGen},
 	BypassExclusivity, Dependent, ExclusiveUniverse, Storage, StorageView, StorageViewMut,
 	Universe,
@@ -141,7 +142,7 @@ pub struct SingleEntity<T> {
 }
 
 impl<T> SingleEntity<T> {
-	pub fn wrap(entity: Entity) -> Self {
+	pub fn new(entity: Entity) -> Self {
 		Self {
 			_ty: PhantomData,
 			entity,
@@ -153,7 +154,7 @@ impl<T> SingleEntity<T> {
 	}
 
 	pub fn cast<U>(self) -> SingleEntity<U> {
-		SingleEntity::wrap(self.as_entity())
+		SingleEntity::new(self.as_entity())
 	}
 
 	pub fn get<V: StorageView<Comp = T>>(self, storage: &V) -> &T {
@@ -589,6 +590,8 @@ impl<T: 'static + Send + Sync> Bundle for SingleBundle<T> {
 		Self(cx.storage_mut::<T>().try_remove(target).unwrap())
 	}
 }
+
+impl<T: 'static + Send + Sync> BuildableArchetype for SingleBundle<T> {}
 
 #[macro_export]
 macro_rules! bundle {
