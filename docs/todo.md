@@ -14,7 +14,6 @@
 
 - [x] Allow `bundles` to spawn from an `ExclusiveUniverse`
   - [x] Replace this feature with a method in the `Universe` to make it slightly safer
-- [ ] Automatically convert identifier types in methods
 - [x] Singleton bundles and entities
   - [x] Move `bundle` to entity
   - [x] Implement `SingleEntity`
@@ -25,6 +24,7 @@
   - [x] Add return types to `func`
   - [ ] Ability to take `func` objects statically
 - [x] Implement `MappedStorage` and `StorageView` traits
+- [ ] Automatically convert identifier types in methods
 - [ ] Implement new destruction model:
   - [ ] Implement standard destructor traits and delegates
   - [ ] Implement `OwnedEntity`
@@ -36,13 +36,13 @@
 
 ##### Multi-Threading
 
-- [ ] Allow more direct manipulation of `Storage` (specifically, expose runs and allow users to get an `UnsafeCell<T>` version of the storage given a mutable reference to it)
-- [ ] Clean up queries to better accommodate the change above
-- [ ] Implement more storage types:
-  - [ ] Free reborrowing on pure views
-  - [ ] Single-threaded ref-celling for multi-borrow
-  - [ ] Sharding at the archetype level
-  - [ ] Rayon integration
+- [ ] Improve `Storage` flexibility:
+  - [ ] Make them per-archetype-multithreaded and accessed by auto-locking views.
+  - [ ] Standardize view traits.
+  - [ ] Implement raw method variants in the views.
+  - [ ] Implement a ref-celled variant.
+  - [ ] Update the query system.
+  - [ ] Rayon integration.
 - [ ] Expose `Archetype::spawn_push`, `Archetype::spawn_in_slot`, `Archetype::len`, and `Archetype::iter`
 - [ ] Implement regular scheduling:
   - [ ] Implement `Scheduler`

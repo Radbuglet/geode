@@ -1,4 +1,4 @@
-use std::{any::type_name, collections::HashMap, fmt::Debug, num::NonZeroU32, ops};
+use std::{any::type_name, collections::HashMap, fmt::Debug, ops};
 
 use derive_where::derive_where;
 
@@ -185,7 +185,7 @@ fn failed_to_find_component<T>(entity: Entity) -> ! {
 #[derive(Debug, Clone)]
 #[derive_where(Default)]
 pub struct Storage<T> {
-	archetypes: HashMap<NonZeroU32, StorageRun<T>, ArchetypeBuildHasher>,
+	archetypes: HashMap<ArchetypeId, StorageRun<T>, ArchetypeBuildHasher>,
 }
 
 impl<T> Storage<T> {
@@ -201,7 +201,7 @@ impl<T> Storage<T> {
 			// (fallthrough)
 		}
 
-		self.archetypes.get(&archetype.id)
+		self.archetypes.get(&archetype)
 	}
 
 	pub fn get_run_mut(&mut self, archetype: ArchetypeId) -> Option<&mut StorageRun<T>> {
@@ -210,7 +210,7 @@ impl<T> Storage<T> {
 			// (fallthrough)
 		}
 
-		self.archetypes.get_mut(&archetype.id)
+		self.archetypes.get_mut(&archetype)
 	}
 
 	pub fn get_run_slice(&self, archetype: ArchetypeId) -> &[Option<StorageRunSlot<T>>] {
@@ -232,7 +232,7 @@ impl<T> Storage<T> {
 		}
 
 		self.archetypes
-			.entry(archetype.id)
+			.entry(archetype)
 			.or_insert_with(Default::default)
 	}
 
@@ -268,11 +268,11 @@ impl<T> Storage<T> {
 			// (fallthrough)
 		}
 
-		let run = self.archetypes.get_mut(&entity.arch.id)?;
+		let run = self.archetypes.get_mut(&entity.arch)?;
 		let removed = run.remove(entity.slot);
 
 		if removed.is_some() && run.as_slice().is_empty() {
-			self.archetypes.remove(&entity.arch.id);
+			self.archetypes.remove(&entity.arch);
 		}
 
 		removed
@@ -310,7 +310,7 @@ impl<T> Storage<T> {
 		}
 
 		self.archetypes
-			.get(&entity.arch.id)?
+			.get(&entity.arch)?
 			.get(entity.slot)
 			.map(StorageRunSlot::value)
 	}
@@ -325,7 +325,7 @@ impl<T> Storage<T> {
 		}
 
 		self.archetypes
-			.get_mut(&entity.arch.id)?
+			.get_mut(&entity.arch)?
 			.get_mut(entity.slot)
 			.map(StorageRunSlot::value_mut)
 	}
