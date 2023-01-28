@@ -24,10 +24,10 @@
   - [x] Add return types to `func`
   - [ ] Ability to take `func` objects statically
 - [x] Implement `MappedStorage` and `StorageView` traits
-- [ ] Automatically convert identifier types in methods
 - [ ] Implement new destruction model:
   - [ ] Implement standard destructor traits and delegates
   - [ ] Implement `OwnedEntity`
+- [ ] Clean up extension methods
 - [ ] Improve `compost`:
   - [ ] Allow unlimited `Deref` chains
   - [ ] Allow users to define custom primary and backup data sources
@@ -37,12 +37,10 @@
 ##### Multi-Threading
 
 - [ ] Improve `Storage` flexibility:
-  - [ ] Make them per-archetype-multithreaded and accessed by auto-locking views.
-  - [ ] Standardize view traits.
-  - [ ] Implement raw method variants in the views.
-  - [ ] Implement a ref-celled variant.
-  - [ ] Update the query system.
-  - [ ] Rayon integration.
+  - [ ] Implement transparent sharding
+  - [ ] Implement `&mut Storage<T>` to `&mut Storage<UnsafeCell<T>>` conversion
+  - [ ] Update the query system
+  - [ ] Rayon integration
 - [ ] Expose `Archetype::spawn_push`, `Archetype::spawn_in_slot`, `Archetype::len`, and `Archetype::iter`
 - [ ] Implement regular scheduling:
   - [ ] Implement `Scheduler`

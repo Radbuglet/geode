@@ -56,6 +56,8 @@ where
 	}
 }
 
+pub type FnPtrMapper<A, B> = (fn(&A) -> &B, fn(&mut A) -> &mut B);
+
 pub trait MutMapper<I: ?Sized>: RefMapper<I> {
 	fn map_mut<'r>(&self, v: &'r mut I) -> &'r mut Self::Out;
 }
@@ -177,7 +179,7 @@ where
 
 fn failed_to_find_component<T>(entity: Entity) -> ! {
 	panic!(
-		"failed to find entity {entity:?} with component {}",
+		"failed to find component of type {} for entity {entity:?}",
 		type_name::<T>()
 	);
 }
@@ -233,7 +235,7 @@ impl<T> Storage<T> {
 
 		self.archetypes
 			.entry(archetype)
-			.or_insert_with(Default::default)
+			.or_insert_with(|| StorageRun::new(archetype))
 	}
 
 	pub fn insert(&mut self, entity: Entity, value: T) -> (Option<T>, &mut T) {
@@ -244,7 +246,7 @@ impl<T> Storage<T> {
 	pub fn add(&mut self, entity: Entity, value: T) -> &mut T {
 		let run = self.get_or_create_run(entity.arch);
 
-		if cfg!(debug_assertions) && run.get(entity.slot).is_some() {
+		if cfg!(debug_assertions) && run.get_slot_by_idx(entity.slot).is_some() {
 			log::warn!(
 				"`.add`'ed a component of type {} to an entity {:?} that already had the component. \
 			     Use `.insert` instead if you wish to replace pre-existing components silently.",
@@ -311,7 +313,7 @@ impl<T> Storage<T> {
 
 		self.archetypes
 			.get(&entity.arch)?
-			.get(entity.slot)
+			.get_slot_by_idx(entity.slot)
 			.map(StorageRunSlot::value)
 	}
 
@@ -326,7 +328,7 @@ impl<T> Storage<T> {
 
 		self.archetypes
 			.get_mut(&entity.arch)?
-			.get_mut(entity.slot)
+			.get_slot_by_idx_mut(entity.slot)
 			.map(StorageRunSlot::value_mut)
 	}
 
@@ -384,20 +386,36 @@ impl<T> StorageViewMut for Storage<T> {
 	}
 }
 
+// === StorageRun === //
+
 pub type StorageRunSlice<T> = [Option<StorageRunSlot<T>>];
 
 #[derive(Debug, Clone)]
-#[derive_where(Default)]
 pub struct StorageRun<T> {
+	archetype: ArchetypeId,
 	comps: Vec<Option<StorageRunSlot<T>>>,
 }
 
 impl<T> StorageRun<T> {
-	pub fn new() -> Self {
-		Self { comps: Vec::new() }
+	pub fn new(archetype: ArchetypeId) -> Self {
+		Self {
+			archetype,
+			comps: Vec::new(),
+		}
 	}
 
 	fn insert(&mut self, entity: Entity, value: T) -> (Option<T>, &mut T) {
+		// Validate handles
+		if cfg!(debug_assertions) && entity.arch != self.archetype {
+			log::error!(
+				"Attempted to insert an entity from a different archetype {:?} into a storage run \
+				 for entities of archetype {:?}",
+				entity.arch,
+				self.archetype,
+			);
+			// (fallthrough)
+		}
+
 		if entity.is_condemned() {
 			log::error!(
 				"Attempted to attach a component of type {:?} to the dead entity {entity:?}",
@@ -434,7 +452,31 @@ impl<T> StorageRun<T> {
 		removed
 	}
 
-	pub fn get(&self, slot_idx: u32) -> Option<&StorageRunSlot<T>> {
+	pub fn get_slot(&self, entity: Entity) -> Option<&StorageRunSlot<T>> {
+		// Validate handle
+		if cfg!(debug_assertions) && entity.arch != self.archetype {
+			log::error!(
+				"Attempted to get an entity from a different archetype {:?} into a storage run \
+				 for entities of archetype {:?}",
+				entity.arch,
+				self.archetype,
+			);
+			// (fallthrough)
+		}
+
+		if entity.is_condemned() {
+			log::error!(
+				"Attempted to get a component of type {:?} from the dead entity {entity:?}",
+				type_name::<T>()
+			);
+			// (fallthrough)
+		}
+
+		// Get component
+		self.get_slot_by_idx(entity.slot)
+	}
+
+	pub fn get_slot_by_idx(&self, slot_idx: u32) -> Option<&StorageRunSlot<T>> {
 		let slot = self.comps.get(slot_idx as usize).and_then(Option::as_ref);
 
 		if let Some(slot) = slot.filter(|slot| slot.lifetime.get().is_condemned()) {
@@ -450,7 +492,31 @@ impl<T> StorageRun<T> {
 		slot
 	}
 
-	pub fn get_mut(&mut self, slot_idx: u32) -> Option<&mut StorageRunSlot<T>> {
+	pub fn get_slot_mut(&mut self, entity: Entity) -> Option<&mut StorageRunSlot<T>> {
+		// Validate handle
+		if cfg!(debug_assertions) && entity.arch != self.archetype {
+			log::error!(
+				"Attempted to get an entity from a different archetype {:?} into a storage run \
+				 for entities of archetype {:?}",
+				entity.arch,
+				self.archetype,
+			);
+			// (fallthrough)
+		}
+
+		if entity.is_condemned() {
+			log::error!(
+				"Attempted to get a component of type {:?} from the dead entity {entity:?}",
+				type_name::<T>()
+			);
+			// (fallthrough)
+		}
+
+		// Get component
+		self.get_slot_by_idx_mut(entity.slot)
+	}
+
+	pub fn get_slot_by_idx_mut(&mut self, slot_idx: u32) -> Option<&mut StorageRunSlot<T>> {
 		let slot = self
 			.comps
 			.get_mut(slot_idx as usize)
@@ -472,6 +538,22 @@ impl<T> StorageRun<T> {
 		slot
 	}
 
+	pub fn get(&self, entity: Entity) -> Option<&T> {
+		self.get_slot(entity).map(|slot| slot.value())
+	}
+
+	pub fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
+		self.get_slot_mut(entity).map(|slot| slot.value_mut())
+	}
+
+	pub fn has_by_idx(&self, slot_idx: u32) -> bool {
+		self.get_slot_by_idx(slot_idx).is_some()
+	}
+
+	pub fn has(&self, entity: Entity) -> bool {
+		self.get(entity).is_some()
+	}
+
 	pub fn max_slot(&self) -> u32 {
 		self.comps.len() as u32
 	}
@@ -482,6 +564,43 @@ impl<T> StorageRun<T> {
 
 	pub fn as_mut_slice(&mut self) -> &mut StorageRunSlice<T> {
 		self.comps.as_mut_slice()
+	}
+}
+
+impl<T> ops::Index<Entity> for StorageRun<T> {
+	type Output = T;
+
+	fn index(&self, entity: Entity) -> &Self::Output {
+		self.get(entity)
+			.unwrap_or_else(|| failed_to_find_component::<T>(entity))
+	}
+}
+
+impl<T> ops::IndexMut<Entity> for StorageRun<T> {
+	fn index_mut(&mut self, entity: Entity) -> &mut Self::Output {
+		self.get_mut(entity)
+			.unwrap_or_else(|| failed_to_find_component::<T>(entity))
+	}
+}
+
+impl<T> StorageView for StorageRun<T> {
+	type Comp = T;
+
+	fn get(&self, entity: Entity) -> Option<&Self::Comp> {
+		// Name resolution prioritizes inherent method of the same name.
+		self.get(entity)
+	}
+
+	fn has(&self, entity: Entity) -> bool {
+		// Name resolution prioritizes inherent method of the same name.
+		self.has(entity)
+	}
+}
+
+impl<T> StorageViewMut for StorageRun<T> {
+	fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Comp> {
+		// Name resolution prioritizes inherent method of the same name.
+		self.get_mut(entity)
 	}
 }
 
