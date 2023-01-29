@@ -37,8 +37,8 @@
 ##### Multi-Threading
 
 - [ ] Improve `Storage` flexibility:
+  - [x] Implement `&mut Storage<T>` to `&mut Storage<UnsafeCell<T>>` conversion
   - [ ] Implement transparent sharding
-  - [ ] Implement `&mut Storage<T>` to `&mut Storage<UnsafeCell<T>>` conversion
   - [ ] Update the query system
   - [ ] Rayon integration
 - [ ] Expose `Archetype::spawn_push`, `Archetype::spawn_in_slot`, `Archetype::len`, and `Archetype::iter`
