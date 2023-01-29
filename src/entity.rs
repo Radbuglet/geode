@@ -83,7 +83,7 @@ impl DebugLifetimeWrapper for WeakArchetypeId {
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Entity {
 	pub lifetime: DebugLifetime,
-	pub arch: ArchetypeId,
+	pub archetype: ArchetypeId,
 	pub slot: u32,
 }
 
@@ -92,11 +92,11 @@ impl Entity {
 		self.slot as usize
 	}
 
-	pub fn get<T>(self, storage: &impl StorageView<Comp = T>) -> &T {
+	pub fn comp<T>(self, storage: &impl StorageView<Comp = T>) -> &T {
 		&storage[self]
 	}
 
-	pub fn get_mut<T>(self, storage: &mut impl StorageViewMut<Comp = T>) -> &mut T {
+	pub fn comp_mut<T>(self, storage: &mut impl StorageViewMut<Comp = T>) -> &mut T {
 		&mut storage[self]
 	}
 
@@ -252,7 +252,7 @@ impl<M: ?Sized> Archetype<M> {
 		// Construct handle
 		Entity {
 			lifetime,
-			arch: self.id(),
+			archetype: self.id(),
 			slot,
 		}
 	}
@@ -266,7 +266,7 @@ impl<M: ?Sized> Archetype<M> {
 		target
 	}
 
-	pub fn spawn_with_auto_cx<L: DebugLabel>(
+	pub fn spawn_with_universe<L: DebugLabel>(
 		&mut self,
 		cx: &mut ExclusiveUniverse,
 		name: L,
@@ -281,7 +281,7 @@ impl<M: ?Sized> Archetype<M> {
 	}
 
 	pub fn despawn(&mut self, entity: Entity) {
-		if cfg!(debug_assertions) && entity.arch.id != self.id {
+		if cfg!(debug_assertions) && entity.archetype.id != self.id {
 			log::error!(
 				"Attempted to despawn {:?} from the non-owning archetype {:?}.",
 				entity,
@@ -311,7 +311,11 @@ impl<M: ?Sized> Archetype<M> {
 		bundle
 	}
 
-	pub fn despawn_and_extract_auto_cx(&mut self, cx: &mut ExclusiveUniverse, entity: Entity) -> M
+	pub fn despawn_and_extract_with_universe(
+		&mut self,
+		cx: &mut ExclusiveUniverse,
+		entity: Entity,
+	) -> M
 	where
 		M: Bundle,
 	{

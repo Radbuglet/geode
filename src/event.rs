@@ -37,9 +37,9 @@ impl<E> EventQueue<E> {
 	}
 
 	pub fn push(&mut self, target: Entity, event: E) {
-		let run = self.runs.entry(target.arch.id).or_insert_with(|| {
+		let run = self.runs.entry(target.archetype.id).or_insert_with(|| {
 			self.maybe_recursively_dispatched = true;
-			(Dependent::new(target.arch.lifetime), Vec::new())
+			(Dependent::new(target.archetype.lifetime), Vec::new())
 		});
 
 		run.1.push(Event {
@@ -108,12 +108,12 @@ struct Event<E> {
 }
 
 impl<E> Event<E> {
-	fn into_tuple(self, arch: ArchetypeId) -> (Entity, E) {
+	fn into_tuple(self, archetype: ArchetypeId) -> (Entity, E) {
 		(
 			Entity {
 				slot: self.slot,
 				lifetime: self.lifetime.get(),
-				arch,
+				archetype,
 			},
 			self.event,
 		)

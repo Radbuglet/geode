@@ -85,13 +85,13 @@ pub struct StorageIterRef<'a, T>(iter::Enumerate<slice::Iter<'a, Option<StorageR
 impl<'a, T> QueryPartIter for StorageIterRef<'a, T> {
 	type Value = &'a T;
 
-	fn next(&mut self, arch: ArchetypeId) -> Option<Option<(Entity, Self::Value)>> {
+	fn next(&mut self, archetype: ArchetypeId) -> Option<Option<(Entity, Self::Value)>> {
 		self.0.next().map(|(slot_idx, sparse_slot)| {
 			sparse_slot.as_ref().map(|slot| {
 				(
 					Entity {
 						lifetime: slot.lifetime(),
-						arch,
+						archetype,
 						slot: slot_idx as u32,
 					},
 					slot.value(),
@@ -114,13 +114,13 @@ pub struct StorageIterMut<'a, T>(iter::Enumerate<slice::IterMut<'a, Option<Stora
 impl<'a, T> QueryPartIter for StorageIterMut<'a, T> {
 	type Value = &'a mut T;
 
-	fn next(&mut self, arch: ArchetypeId) -> Option<Option<(Entity, Self::Value)>> {
+	fn next(&mut self, archetype: ArchetypeId) -> Option<Option<(Entity, Self::Value)>> {
 		self.0.next().map(|(slot_idx, sparse_slot)| {
 			sparse_slot.as_mut().map(|slot| {
 				(
 					Entity {
 						lifetime: slot.lifetime(),
-						arch,
+						archetype,
 						slot: slot_idx as u32,
 					},
 					slot.value_mut(),

@@ -239,12 +239,12 @@ impl<T> Storage<T> {
 	}
 
 	pub fn insert(&mut self, entity: Entity, value: T) -> (Option<T>, &mut T) {
-		self.get_or_create_run(entity.arch) // warns on dead archetype
+		self.get_or_create_run(entity.archetype) // warns on dead archetype
 			.insert(entity, value) // warns on dead entity
 	}
 
 	pub fn add(&mut self, entity: Entity, value: T) -> &mut T {
-		let run = self.get_or_create_run(entity.arch);
+		let run = self.get_or_create_run(entity.archetype);
 
 		if cfg!(debug_assertions) && run.get_slot_by_idx(entity.slot).is_some() {
 			log::warn!(
@@ -270,11 +270,11 @@ impl<T> Storage<T> {
 			// (fallthrough)
 		}
 
-		let run = self.archetypes.get_mut(&entity.arch)?;
+		let run = self.archetypes.get_mut(&entity.archetype)?;
 		let removed = run.remove(entity.slot);
 
 		if removed.is_some() && run.as_slice().is_empty() {
-			self.archetypes.remove(&entity.arch);
+			self.archetypes.remove(&entity.archetype);
 		}
 
 		removed
@@ -312,7 +312,7 @@ impl<T> Storage<T> {
 		}
 
 		self.archetypes
-			.get(&entity.arch)?
+			.get(&entity.archetype)?
 			.get_slot_by_idx(entity.slot)
 			.map(StorageRunSlot::value)
 	}
@@ -327,7 +327,7 @@ impl<T> Storage<T> {
 		}
 
 		self.archetypes
-			.get_mut(&entity.arch)?
+			.get_mut(&entity.archetype)?
 			.get_slot_by_idx_mut(entity.slot)
 			.map(StorageRunSlot::value_mut)
 	}
@@ -406,11 +406,11 @@ impl<T> StorageRun<T> {
 
 	fn insert(&mut self, entity: Entity, value: T) -> (Option<T>, &mut T) {
 		// Validate handles
-		if cfg!(debug_assertions) && entity.arch != self.archetype {
+		if cfg!(debug_assertions) && entity.archetype != self.archetype {
 			log::error!(
 				"Attempted to insert an entity from a different archetype {:?} into a storage run \
 				 for entities of archetype {:?}",
-				entity.arch,
+				entity.archetype,
 				self.archetype,
 			);
 			// (fallthrough)
@@ -454,11 +454,11 @@ impl<T> StorageRun<T> {
 
 	pub fn get_slot(&self, entity: Entity) -> Option<&StorageRunSlot<T>> {
 		// Validate handle
-		if cfg!(debug_assertions) && entity.arch != self.archetype {
+		if cfg!(debug_assertions) && entity.archetype != self.archetype {
 			log::error!(
 				"Attempted to get an entity from a different archetype {:?} into a storage run \
 				 for entities of archetype {:?}",
-				entity.arch,
+				entity.archetype,
 				self.archetype,
 			);
 			// (fallthrough)
@@ -494,11 +494,11 @@ impl<T> StorageRun<T> {
 
 	pub fn get_slot_mut(&mut self, entity: Entity) -> Option<&mut StorageRunSlot<T>> {
 		// Validate handle
-		if cfg!(debug_assertions) && entity.arch != self.archetype {
+		if cfg!(debug_assertions) && entity.archetype != self.archetype {
 			log::error!(
 				"Attempted to get an entity from a different archetype {:?} into a storage run \
 				 for entities of archetype {:?}",
-				entity.arch,
+				entity.archetype,
 				self.archetype,
 			);
 			// (fallthrough)

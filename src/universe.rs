@@ -456,7 +456,7 @@ impl<'r> ExclusiveUniverse<'r> {
 	) -> Entity {
 		self.universe_dangerous()
 			.archetype::<B>()
-			.spawn_with_auto_cx(self, name, bundle)
+			.spawn_with_universe(self, name, bundle)
 	}
 
 	pub fn spawn_bundled_single<T: 'static + Send + Sync>(
@@ -470,7 +470,7 @@ impl<'r> ExclusiveUniverse<'r> {
 	pub fn despawn_bundled<B: BuildableArchetype + Bundle>(&mut self, target: Entity) -> B {
 		self.universe_dangerous()
 			.archetype::<B>()
-			.despawn_and_extract_auto_cx(self, target)
+			.despawn_and_extract_with_universe(self, target)
 	}
 
 	pub fn despawn_bundled_single<T: 'static + Send + Sync>(
