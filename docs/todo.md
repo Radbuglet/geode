@@ -39,6 +39,9 @@
 
 - [ ] Improve `Storage` flexibility:
   - [x] Implement `&mut Storage<T>` to `&mut Storage<UnsafeCell<T>>` conversion
+  - [x] Implement `LocatedStorage`
+  - [ ] Implement `RefCelledStorage`
+  - [ ] Allow wrappers to be mapped without losing their original functionality
   - [ ] Implement transparent sharding
   - [ ] Update the query system
   - [ ] Rayon integration
