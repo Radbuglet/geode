@@ -1,6 +1,6 @@
-use crate::util::macros::impl_tuples;
+use crate::{storage::StorageRunSlot, util::macros::impl_tuples};
 
-use super::{storage::StorageRunSlot, ArchetypeId, Entity, Storage};
+use super::{ArchetypeId, Entity, Storage};
 
 use std::{iter, slice};
 
@@ -80,21 +80,21 @@ impl<'a, T> QueryPart for &'a Storage<T> {
 	}
 }
 
-pub struct StorageIterRef<'a, T>(iter::Enumerate<slice::Iter<'a, Option<StorageRunSlot<T>>>>);
+pub struct StorageIterRef<'a, T>(iter::Enumerate<slice::Iter<'a, StorageRunSlot<T>>>);
 
 impl<'a, T> QueryPartIter for StorageIterRef<'a, T> {
 	type Value = &'a T;
 
 	fn next(&mut self, archetype: ArchetypeId) -> Option<Option<(Entity, Self::Value)>> {
 		self.0.next().map(|(slot_idx, sparse_slot)| {
-			sparse_slot.as_ref().map(|slot| {
+			sparse_slot.pair().map(|(lifetime, value)| {
 				(
 					Entity {
-						lifetime: slot.lifetime(),
+						lifetime,
 						archetype,
 						slot: slot_idx as u32,
 					},
-					slot.value(),
+					value,
 				)
 			})
 		})
@@ -109,21 +109,21 @@ impl<'a, T> QueryPart for &'a mut Storage<T> {
 	}
 }
 
-pub struct StorageIterMut<'a, T>(iter::Enumerate<slice::IterMut<'a, Option<StorageRunSlot<T>>>>);
+pub struct StorageIterMut<'a, T>(iter::Enumerate<slice::IterMut<'a, StorageRunSlot<T>>>);
 
 impl<'a, T> QueryPartIter for StorageIterMut<'a, T> {
 	type Value = &'a mut T;
 
 	fn next(&mut self, archetype: ArchetypeId) -> Option<Option<(Entity, Self::Value)>> {
 		self.0.next().map(|(slot_idx, sparse_slot)| {
-			sparse_slot.as_mut().map(|slot| {
+			sparse_slot.pair_mut().map(|(lifetime, value)| {
 				(
 					Entity {
-						lifetime: slot.lifetime(),
+						lifetime,
 						archetype,
 						slot: slot_idx as u32,
 					},
-					slot.value_mut(),
+					value,
 				)
 			})
 		})

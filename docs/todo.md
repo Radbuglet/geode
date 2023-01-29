@@ -38,7 +38,7 @@
 ##### Multi-Threading
 
 - [ ] Improve `Storage` flexibility:
-  - [ ] Implement `&mut Storage<T>` to `&mut Storage<UnsafeCell<T>>` conversion
+  - [x] Implement `&mut Storage<T>` to `&mut Storage<UnsafeCell<T>>` conversion
   - [ ] Implement transparent sharding
   - [ ] Update the query system
   - [ ] Rayon integration

@@ -1,6 +1,3 @@
-// TODO: Implement `TransOption<T>` and re-introduce to `Storage<T>`
-
-/*
 use std::{
 	alloc::Layout,
 	borrow::Borrow,
@@ -247,13 +244,13 @@ unsafe impl<T: Sync> Sync for TransVec<T> {}
 
 impl<T: fmt::Debug> fmt::Debug for TransVec<T> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.debug_list().entries(self.as_slice()).finish()
+		f.debug_list().entries(self.get_slice()).finish()
 	}
 }
 
 impl<T: Clone> Clone for TransVec<T> {
 	fn clone(&self) -> Self {
-		Self::from_vec(Vec::from_iter(self.as_slice().iter().cloned()))
+		Self::from_vec(Vec::from_iter(self.get_slice().iter().cloned()))
 	}
 }
 
@@ -272,15 +269,15 @@ impl<T> TransVec<T> {
 		Self { ptr, len, cap }
 	}
 
-	unsafe fn as_vec(&mut self) -> Vec<T> {
-		Vec::from_raw_parts(self.ptr, self.len, self.cap)
+	unsafe fn get_vec(&mut self) -> ManuallyDrop<Vec<T>> {
+		ManuallyDrop::new(Vec::from_raw_parts(self.ptr, self.len, self.cap))
 	}
 
-	pub fn as_slice(&self) -> &[T] {
+	pub fn get_slice(&self) -> &[T] {
 		unsafe { slice::from_raw_parts(self.ptr, self.len) }
 	}
 
-	pub fn as_mut_slice(&mut self) -> &mut [T] {
+	pub fn get_mut_slice(&mut self) -> &mut [T] {
 		unsafe { slice::from_raw_parts_mut(self.ptr, self.len) }
 	}
 
@@ -302,18 +299,14 @@ impl<T> TransVec<T> {
 			}
 		}
 
-		let vec = unsafe { self.as_vec() };
-		let mut guard = Guard {
-			target: self,
-			vec: ManuallyDrop::new(vec),
-		};
+		let vec = unsafe { self.get_vec() };
+		let mut guard = Guard { target: self, vec };
 		f(&mut guard.vec)
 	}
 }
 
 impl<T> Drop for TransVec<T> {
 	fn drop(&mut self) {
-		drop(unsafe { self.as_vec() });
+		drop(ManuallyDrop::into_inner(unsafe { self.get_vec() }));
 	}
 }
-*/
