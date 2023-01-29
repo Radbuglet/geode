@@ -27,6 +27,7 @@
 - [ ] Implement new destruction model:
   - [ ] Implement standard destructor traits and delegates
   - [ ] Implement `OwnedEntity`
+  - [ ] Implement `ResourceMap` on top of this
 - [ ] Clean up extension methods
 - [ ] Improve `compost`:
   - [ ] Allow unlimited `Deref` chains
@@ -37,7 +38,7 @@
 ##### Multi-Threading
 
 - [ ] Improve `Storage` flexibility:
-  - [x] Implement `&mut Storage<T>` to `&mut Storage<UnsafeCell<T>>` conversion
+  - [ ] Implement `&mut Storage<T>` to `&mut Storage<UnsafeCell<T>>` conversion
   - [ ] Implement transparent sharding
   - [ ] Update the query system
   - [ ] Rayon integration

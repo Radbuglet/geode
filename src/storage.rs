@@ -1,4 +1,4 @@
-use std::{any::type_name, cell::UnsafeCell, fmt::Debug, ops};
+use std::{any::type_name, collections::HashMap, fmt::Debug, ops};
 
 use derive_where::derive_where;
 
@@ -6,10 +6,6 @@ use crate::{
 	debug::lifetime::{DebugLifetime, DebugLifetimeWrapper, Dependent},
 	entity::hashers::ArchetypeBuildHasher,
 	query::{QueryIter, StorageIterMut, StorageIterRef},
-	util::{
-		ptr::PointeeCastExt,
-		transmute::{TransMap, TransVec},
-	},
 	ArchetypeId, Entity, Query,
 };
 
@@ -190,20 +186,15 @@ fn failed_to_find_component<T>(entity: Entity) -> ! {
 
 #[derive(Debug, Clone)]
 #[derive_where(Default)]
-#[repr(C)]
 pub struct Storage<T> {
-	archetypes: TransMap<ArchetypeId, StorageRun<()>, StorageRun<T>, ArchetypeBuildHasher>,
+	archetypes: HashMap<ArchetypeId, StorageRun<T>, ArchetypeBuildHasher>,
 }
 
 impl<T> Storage<T> {
 	pub fn new() -> Self {
 		Self {
-			archetypes: TransMap::default(),
+			archetypes: HashMap::default(),
 		}
-	}
-
-	pub fn as_celled(&mut self) -> &mut Storage<UnsafeCell<T>> {
-		unsafe { self.transmute_mut_via_ptr(|p| p.cast()) }
 	}
 
 	pub fn get_run(&self, archetype: ArchetypeId) -> Option<&StorageRun<T>> {
@@ -243,7 +234,8 @@ impl<T> Storage<T> {
 		}
 
 		self.archetypes
-			.get_mut_or_create(archetype, || StorageRun::new(archetype))
+			.entry(archetype)
+			.or_insert_with(|| StorageRun::new(archetype))
 	}
 
 	pub fn insert(&mut self, entity: Entity, value: T) -> (Option<T>, &mut T) {
@@ -399,22 +391,17 @@ impl<T> StorageViewMut for Storage<T> {
 pub type StorageRunSlice<T> = [Option<StorageRunSlot<T>>];
 
 #[derive(Debug, Clone)]
-#[repr(C)]
 pub struct StorageRun<T> {
 	archetype: ArchetypeId,
-	comps: TransVec<Option<StorageRunSlot<T>>>,
+	comps: Vec<Option<StorageRunSlot<T>>>,
 }
 
 impl<T> StorageRun<T> {
 	pub fn new(archetype: ArchetypeId) -> Self {
 		Self {
 			archetype,
-			comps: TransVec::new(),
+			comps: Vec::new(),
 		}
-	}
-
-	pub fn as_celled(&mut self) -> &mut StorageRun<UnsafeCell<T>> {
-		unsafe { self.transmute_mut_via_ptr(|p| p.cast()) }
 	}
 
 	fn insert(&mut self, entity: Entity, value: T) -> (Option<T>, &mut T) {
@@ -439,12 +426,10 @@ impl<T> StorageRun<T> {
 
 		// Get slot
 		let slot_idx = entity.slot_usize();
-
-		if slot_idx >= self.comps.as_slice().len() {
-			self.comps
-				.mutate(|comps| comps.resize_with(slot_idx + 1, || None));
+		if slot_idx >= self.comps.len() {
+			self.comps.resize_with(slot_idx + 1, || None);
 		};
-		let slot = &mut self.comps.as_mut_slice()[slot_idx];
+		let slot = &mut self.comps[slot_idx];
 
 		// Replace slot
 		let replaced = slot
@@ -458,15 +443,13 @@ impl<T> StorageRun<T> {
 	}
 
 	fn remove(&mut self, slot: u32) -> Option<T> {
-		self.comps.mutate(|comps| {
-			let removed = comps.get_mut(slot as usize)?.take().map(|v| v.value);
+		let removed = self.comps.get_mut(slot as usize)?.take().map(|v| v.value);
 
-			while matches!(comps.last(), Some(None)) {
-				comps.pop();
-			}
+		while matches!(self.comps.last(), Some(None)) {
+			self.comps.pop();
+		}
 
-			removed
-		})
+		removed
 	}
 
 	pub fn get_slot(&self, entity: Entity) -> Option<&StorageRunSlot<T>> {
@@ -494,11 +477,7 @@ impl<T> StorageRun<T> {
 	}
 
 	pub fn get_slot_by_idx(&self, slot_idx: u32) -> Option<&StorageRunSlot<T>> {
-		let slot = self
-			.comps
-			.as_slice()
-			.get(slot_idx as usize)
-			.and_then(Option::as_ref);
+		let slot = self.comps.get(slot_idx as usize).and_then(Option::as_ref);
 
 		if let Some(slot) = slot.filter(|slot| slot.lifetime.get().is_condemned()) {
 			log::error!(
@@ -540,7 +519,6 @@ impl<T> StorageRun<T> {
 	pub fn get_slot_by_idx_mut(&mut self, slot_idx: u32) -> Option<&mut StorageRunSlot<T>> {
 		let slot = self
 			.comps
-			.as_mut_slice()
 			.get_mut(slot_idx as usize)
 			.and_then(Option::as_mut);
 
@@ -577,7 +555,7 @@ impl<T> StorageRun<T> {
 	}
 
 	pub fn max_slot(&self) -> u32 {
-		self.comps.as_slice().len() as u32
+		self.comps.len() as u32
 	}
 
 	pub fn as_slice(&self) -> &StorageRunSlice<T> {

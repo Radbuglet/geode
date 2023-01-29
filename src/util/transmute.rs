@@ -1,3 +1,6 @@
+// TODO: Implement `TransOption<T>` and re-introduce to `Storage<T>`
+
+/*
 use std::{
 	alloc::Layout,
 	borrow::Borrow,
@@ -313,3 +316,4 @@ impl<T> Drop for TransVec<T> {
 		drop(unsafe { self.as_vec() });
 	}
 }
+*/
