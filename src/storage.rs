@@ -20,9 +20,9 @@ use crate::{
 	ArchetypeId, Entity, Query,
 };
 
-// === Traits === //
+// === StorageLike === //
 
-pub trait StorageView: ops::Index<Entity, Output = Self::Comp> {
+pub trait StorageLike: ops::Index<Entity, Output = Self::Comp> {
 	type Comp: ?Sized;
 
 	fn get(&self, entity: Entity) -> Option<&Self::Comp>;
@@ -37,7 +37,7 @@ pub trait StorageView: ops::Index<Entity, Output = Self::Comp> {
 	}
 }
 
-pub trait StorageViewMut: StorageView + ops::IndexMut<Entity, Output = Self::Comp> {
+pub trait StorageLikeMut: StorageLike + ops::IndexMut<Entity, Output = Self::Comp> {
 	fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Comp>;
 
 	fn map_mut<M: MutMapper<Self::Comp>>(&mut self, mapper: M) -> MappedStorageMut<'_, Self, M> {
@@ -106,7 +106,7 @@ pub struct MappedStorageRef<'a, S: ?Sized, M> {
 
 impl<'a, S, M> ops::Index<Entity> for MappedStorageRef<'a, S, M>
 where
-	S: ?Sized + StorageView,
+	S: ?Sized + StorageLike,
 	M: RefMapper<S::Comp>,
 {
 	type Output = M::Out;
@@ -116,9 +116,9 @@ where
 	}
 }
 
-impl<'a, S, M> StorageView for MappedStorageRef<'a, S, M>
+impl<'a, S, M> StorageLike for MappedStorageRef<'a, S, M>
 where
-	S: ?Sized + StorageView,
+	S: ?Sized + StorageLike,
 	M: RefMapper<S::Comp>,
 {
 	type Comp = M::Out;
@@ -140,7 +140,7 @@ pub struct MappedStorageMut<'a, S: ?Sized, M> {
 
 impl<'a, S, M> ops::Index<Entity> for MappedStorageMut<'a, S, M>
 where
-	S: ?Sized + StorageView,
+	S: ?Sized + StorageLike,
 	M: RefMapper<S::Comp>,
 {
 	type Output = M::Out;
@@ -152,7 +152,7 @@ where
 
 impl<'a, S, M> ops::IndexMut<Entity> for MappedStorageMut<'a, S, M>
 where
-	S: ?Sized + StorageViewMut,
+	S: ?Sized + StorageLikeMut,
 	M: MutMapper<S::Comp>,
 {
 	fn index_mut(&mut self, entity: Entity) -> &mut Self::Output {
@@ -160,9 +160,9 @@ where
 	}
 }
 
-impl<'a, S, M> StorageView for MappedStorageMut<'a, S, M>
+impl<'a, S, M> StorageLike for MappedStorageMut<'a, S, M>
 where
-	S: ?Sized + StorageView,
+	S: ?Sized + StorageLike,
 	M: RefMapper<S::Comp>,
 {
 	type Comp = M::Out;
@@ -176,9 +176,9 @@ where
 	}
 }
 
-impl<'a, S, M> StorageViewMut for MappedStorageMut<'a, S, M>
+impl<'a, S, M> StorageLikeMut for MappedStorageMut<'a, S, M>
 where
-	S: ?Sized + StorageViewMut,
+	S: ?Sized + StorageLikeMut,
 	M: MutMapper<S::Comp>,
 {
 	fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Comp> {
@@ -195,8 +195,6 @@ fn failed_to_find_component<T>(entity: Entity) -> ! {
 	);
 }
 
-pub type UnsafeCelledStorage<T> = Storage<UnsafeCell<T>>;
-
 #[derive(Debug, Clone)]
 #[derive_where(Default)]
 #[repr(C)]
@@ -211,7 +209,7 @@ impl<T> Storage<T> {
 		}
 	}
 
-	pub fn as_celled(&mut self) -> &mut UnsafeCelledStorage<T> {
+	pub fn as_celled(&mut self) -> &mut Storage<UnsafeCell<T>> {
 		unsafe { self.transmute_mut_via_ptr(|p| p.cast()) }
 	}
 
@@ -237,11 +235,18 @@ impl<T> Storage<T> {
 		self.archetypes.get_mut(&archetype)
 	}
 
-	pub fn get_run_slice(&self, archetype: ArchetypeId) -> &StorageRunSlice<T> {
+	pub fn get_run_view(&self, archetype: ArchetypeId) -> StorageRunView<T> {
+		self.get_run(archetype).map_or(
+			StorageRunView::new_empty(archetype),
+			StorageRun::as_ref_view,
+		)
+	}
+
+	pub fn get_run_slice(&self, archetype: ArchetypeId) -> &StorageSlotSlice<T> {
 		self.get_run(archetype).map_or(&[], StorageRun::as_slice)
 	}
 
-	pub fn get_run_slice_mut(&mut self, archetype: ArchetypeId) -> &mut StorageRunSlice<T> {
+	pub fn get_run_slice_mut(&mut self, archetype: ArchetypeId) -> &mut StorageSlotSlice<T> {
 		self.get_run_mut(archetype)
 			.map_or(&mut [], StorageRun::as_mut_slice)
 	}
@@ -383,7 +388,7 @@ impl<T> ops::IndexMut<Entity> for Storage<T> {
 	}
 }
 
-impl<T> StorageView for Storage<T> {
+impl<T> StorageLike for Storage<T> {
 	type Comp = T;
 
 	fn get(&self, entity: Entity) -> Option<&Self::Comp> {
@@ -397,7 +402,7 @@ impl<T> StorageView for Storage<T> {
 	}
 }
 
-impl<T> StorageViewMut for Storage<T> {
+impl<T> StorageLikeMut for Storage<T> {
 	fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Comp> {
 		// Name resolution prioritizes inherent method of the same name.
 		self.get_mut(entity)
@@ -406,18 +411,109 @@ impl<T> StorageViewMut for Storage<T> {
 
 // === StorageRun === //
 
-pub type UnsafeCelledStorageRun<T> = StorageRun<UnsafeCell<T>>;
+#[derive(Debug)]
+#[derive_where(Copy, Clone)]
+pub struct StorageRunView<'a, T> {
+	archetype: ArchetypeId,
+	comps: &'a StorageSlotSlice<T>,
+}
 
-pub type StorageRunSlice<T> = [StorageRunSlot<T>];
+impl<'a, T> StorageRunView<'a, T> {
+	// Constructors and getters
+	pub fn new(archetype: ArchetypeId, slots: &'a StorageSlotSlice<T>) -> Self {
+		Self {
+			archetype,
+			comps: slots,
+		}
+	}
+
+	pub fn new_empty(archetype: ArchetypeId) -> Self {
+		Self::new(archetype, &[])
+	}
+
+	pub fn archetype(self) -> ArchetypeId {
+		self.archetype
+	}
+
+	pub fn as_slice(self) -> &'a StorageSlotSlice<T> {
+		self.comps
+	}
+
+	// Getters
+	pub fn get_slot_by_idx(self, slot_idx: u32) -> Option<(DebugLifetime, &'a T)> {
+		let slot = self
+			.comps
+			.get(slot_idx as usize)
+			.and_then(|slot| slot.pair());
+
+		if let Some((lt, _)) = slot.filter(|(lt, _)| lt.is_condemned()) {
+			log::error!(
+				"Fetched a storage slot at index {} of type {:?} for the dead entity {:?}",
+				slot_idx,
+				type_name::<T>(),
+				lt,
+			);
+			// (fallthrough)
+		}
+
+		slot
+	}
+
+	pub fn get_slot(self, entity: Entity) -> Option<(DebugLifetime, &'a T)> {
+		// Validate handle
+		if cfg!(debug_assertions) && entity.archetype != self.archetype {
+			log::error!(
+				"Attempted to get an entity from a different archetype {:?} into a storage run \
+				 for entities of archetype {:?}",
+				entity.archetype,
+				self.archetype,
+			);
+			// (fallthrough)
+		}
+
+		if entity.is_condemned() {
+			log::error!(
+				"Attempted to get a component of type {:?} from the dead entity {entity:?}",
+				type_name::<T>()
+			);
+			// (fallthrough)
+		}
+
+		// Get component
+		self.get_slot_by_idx(entity.slot)
+	}
+
+	pub fn try_get(self, entity: Entity) -> Option<&'a T> {
+		self.get_slot(entity).map(|(_, v)| v)
+	}
+
+	pub fn get(self, entity: Entity) -> &'a T {
+		self.try_get(entity)
+			.unwrap_or_else(|| failed_to_find_component::<T>(entity))
+	}
+
+	pub fn has_by_idx(self, slot_idx: u32) -> bool {
+		self.get_slot_by_idx(slot_idx).is_some()
+	}
+
+	pub fn has(self, entity: Entity) -> bool {
+		self.try_get(entity).is_some()
+	}
+
+	pub fn max_slot(self) -> u32 {
+		self.comps.len() as u32
+	}
+}
 
 #[derive(Debug, Clone)]
 #[repr(C)]
 pub struct StorageRun<T> {
 	archetype: ArchetypeId,
-	comps: TransVec<StorageRunSlot<T>>,
+	comps: TransVec<StorageSlot<T>>,
 }
 
 impl<T> StorageRun<T> {
+	// Constructors and getters
 	pub fn new(archetype: ArchetypeId) -> Self {
 		Self {
 			archetype,
@@ -425,9 +521,24 @@ impl<T> StorageRun<T> {
 		}
 	}
 
-	pub fn as_celled(&mut self) -> &mut UnsafeCelledStorageRun<T> {
-		unsafe { self.transmute_mut_via_ptr(|p| p.cast()) }
+	pub fn archetype(&self) -> ArchetypeId {
+		self.archetype
 	}
+
+	pub fn as_slice(&self) -> &StorageSlotSlice<T> {
+		self.comps.get_slice()
+	}
+
+	pub fn as_mut_slice(&mut self) -> &mut StorageSlotSlice<T> {
+		self.comps.get_mut_slice()
+	}
+
+	pub fn as_ref_view(&self) -> StorageRunView<'_, T> {
+		StorageRunView::new(self.archetype, self.as_slice())
+	}
+
+	// Special manipulation methods
+	// TODO: Implement auto-deletion of empty runs and expose these.
 
 	fn insert(&mut self, entity: Entity, value: T) -> (Option<T>, &mut T) {
 		// Validate handles
@@ -453,7 +564,7 @@ impl<T> StorageRun<T> {
 		let slot_idx = entity.slot_usize();
 		if slot_idx >= self.comps.get_slice().len() {
 			self.comps
-				.mutate(|comps| comps.resize_with(slot_idx + 1, || StorageRunSlot::Empty));
+				.mutate(|comps| comps.resize_with(slot_idx + 1, || StorageSlot::Empty));
 		};
 
 		let slot = &mut self.comps.get_mut_slice()[slot_idx];
@@ -461,7 +572,7 @@ impl<T> StorageRun<T> {
 		// Replace slot
 		let replaced = mem::replace(
 			slot,
-			StorageRunSlot::Full {
+			StorageSlot::Full {
 				lifetime: Dependent::new(entity.lifetime),
 				value,
 			},
@@ -472,9 +583,9 @@ impl<T> StorageRun<T> {
 
 	fn remove(&mut self, slot: u32) -> Option<T> {
 		self.comps.mutate(|comps| {
-			let removed = mem::replace(comps.get_mut(slot as usize)?, StorageRunSlot::Empty);
+			let removed = mem::replace(comps.get_mut(slot as usize)?, StorageSlot::Empty);
 
-			while matches!(comps.last(), Some(StorageRunSlot::Empty)) {
+			while matches!(comps.last(), Some(StorageSlot::Empty)) {
 				comps.pop();
 			}
 
@@ -482,50 +593,32 @@ impl<T> StorageRun<T> {
 		})
 	}
 
+	// Forwarded accessors
 	pub fn get_slot_by_idx(&self, slot_idx: u32) -> Option<(DebugLifetime, &T)> {
-		let slot = self
-			.comps
-			.get_slice()
-			.get(slot_idx as usize)
-			.and_then(|slot| slot.pair());
-
-		if let Some((lt, _)) = slot.filter(|(lt, _)| lt.is_condemned()) {
-			log::error!(
-				"Fetched a storage slot at index {} of type {:?} for the dead entity {:?}",
-				slot_idx,
-				type_name::<T>(),
-				lt,
-			);
-			// (fallthrough)
-		}
-
-		slot
+		self.as_ref_view().get_slot_by_idx(slot_idx)
 	}
 
 	pub fn get_slot(&self, entity: Entity) -> Option<(DebugLifetime, &T)> {
-		// Validate handle
-		if cfg!(debug_assertions) && entity.archetype != self.archetype {
-			log::error!(
-				"Attempted to get an entity from a different archetype {:?} into a storage run \
-				 for entities of archetype {:?}",
-				entity.archetype,
-				self.archetype,
-			);
-			// (fallthrough)
-		}
-
-		if entity.is_condemned() {
-			log::error!(
-				"Attempted to get a component of type {:?} from the dead entity {entity:?}",
-				type_name::<T>()
-			);
-			// (fallthrough)
-		}
-
-		// Get component
-		self.get_slot_by_idx(entity.slot)
+		self.as_ref_view().get_slot(entity)
 	}
 
+	pub fn get(&self, entity: Entity) -> Option<&T> {
+		self.as_ref_view().try_get(entity)
+	}
+
+	pub fn has_by_idx(&self, slot_idx: u32) -> bool {
+		self.as_ref_view().has_by_idx(slot_idx)
+	}
+
+	pub fn has(&self, entity: Entity) -> bool {
+		self.as_ref_view().has(entity)
+	}
+
+	pub fn max_slot(&self) -> u32 {
+		self.as_ref_view().max_slot()
+	}
+
+	// Mutable accessors
 	pub fn get_slot_by_idx_mut(&mut self, slot_idx: u32) -> Option<(DebugLifetime, &mut T)> {
 		let slot = self
 			.comps
@@ -570,80 +663,21 @@ impl<T> StorageRun<T> {
 		self.get_slot_by_idx_mut(entity.slot)
 	}
 
-	pub fn get(&self, entity: Entity) -> Option<&T> {
-		self.get_slot(entity).map(|(_, v)| v)
-	}
-
 	pub fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
 		self.get_slot_mut(entity).map(|(_, v)| v)
-	}
-
-	pub fn has_by_idx(&self, slot_idx: u32) -> bool {
-		self.get_slot_by_idx(slot_idx).is_some()
-	}
-
-	pub fn has(&self, entity: Entity) -> bool {
-		self.get(entity).is_some()
-	}
-
-	pub fn max_slot(&self) -> u32 {
-		self.comps.get_slice().len() as u32
-	}
-
-	pub fn as_slice(&self) -> &StorageRunSlice<T> {
-		self.comps.get_slice()
-	}
-
-	pub fn as_mut_slice(&mut self) -> &mut StorageRunSlice<T> {
-		self.comps.get_mut_slice()
-	}
-}
-
-impl<T> ops::Index<Entity> for StorageRun<T> {
-	type Output = T;
-
-	fn index(&self, entity: Entity) -> &Self::Output {
-		self.get(entity)
-			.unwrap_or_else(|| failed_to_find_component::<T>(entity))
-	}
-}
-
-impl<T> ops::IndexMut<Entity> for StorageRun<T> {
-	fn index_mut(&mut self, entity: Entity) -> &mut Self::Output {
-		self.get_mut(entity)
-			.unwrap_or_else(|| failed_to_find_component::<T>(entity))
-	}
-}
-
-impl<T> StorageView for StorageRun<T> {
-	type Comp = T;
-
-	fn get(&self, entity: Entity) -> Option<&Self::Comp> {
-		// Name resolution prioritizes inherent method of the same name.
-		self.get(entity)
-	}
-
-	fn has(&self, entity: Entity) -> bool {
-		// Name resolution prioritizes inherent method of the same name.
-		self.has(entity)
-	}
-}
-
-impl<T> StorageViewMut for StorageRun<T> {
-	fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Comp> {
-		// Name resolution prioritizes inherent method of the same name.
-		self.get_mut(entity)
 	}
 }
 
 // === StorageRunSlot === //
+
+pub type StorageSlotSlice<T> = [StorageSlot<T>];
 
 // This actually has a defined representation.
 // See: https://doc.rust-lang.org/reference/type-layout.html#reprc-enums-with-fields
 #[derive(Debug, Clone)]
 #[derive_where(Default)]
 #[repr(C)]
-pub enum StorageRunSlot<T> {
+pub enum StorageSlot<T> {
 	Full {
 		lifetime: Dependent<DebugLifetime>,
 		value: T,
@@ -652,43 +686,50 @@ pub enum StorageRunSlot<T> {
 	Empty,
 }
 
-impl<T> StorageRunSlot<T> {
+impl<T> StorageSlot<T> {
 	pub fn is_full(&self) -> bool {
 		self.value().is_some()
 	}
 
-	pub fn into_value(self) -> Option<T> {
+	pub fn into_pair(self) -> Option<(DebugLifetime, T)> {
 		match self {
-			StorageRunSlot::Full { value, .. } => Some(value),
-			StorageRunSlot::Empty => None,
-		}
-	}
-
-	pub fn value(&self) -> Option<&T> {
-		match self {
-			StorageRunSlot::Full { value, .. } => Some(value),
-			StorageRunSlot::Empty => None,
-		}
-	}
-
-	pub fn value_mut(&mut self) -> Option<&mut T> {
-		match self {
-			StorageRunSlot::Full { value, .. } => Some(value),
-			StorageRunSlot::Empty => None,
+			StorageSlot::Full { value, lifetime } => Some((lifetime.get(), value)),
+			StorageSlot::Empty => None,
 		}
 	}
 
 	pub fn pair(&self) -> Option<(DebugLifetime, &T)> {
 		match self {
-			StorageRunSlot::Full { value, lifetime } => Some((lifetime.get(), value)),
-			StorageRunSlot::Empty => None,
+			StorageSlot::Full { value, lifetime } => Some((lifetime.get(), value)),
+			StorageSlot::Empty => None,
 		}
 	}
 
 	pub fn pair_mut(&mut self) -> Option<(DebugLifetime, &mut T)> {
 		match self {
-			StorageRunSlot::Full { value, lifetime } => Some((lifetime.get(), value)),
-			StorageRunSlot::Empty => None,
+			StorageSlot::Full { value, lifetime } => Some((lifetime.get(), value)),
+			StorageSlot::Empty => None,
+		}
+	}
+
+	pub fn into_value(self) -> Option<T> {
+		match self {
+			StorageSlot::Full { value, .. } => Some(value),
+			StorageSlot::Empty => None,
+		}
+	}
+
+	pub fn value(&self) -> Option<&T> {
+		match self {
+			StorageSlot::Full { value, .. } => Some(value),
+			StorageSlot::Empty => None,
+		}
+	}
+
+	pub fn value_mut(&mut self) -> Option<&mut T> {
+		match self {
+			StorageSlot::Full { value, .. } => Some(value),
+			StorageSlot::Empty => None,
 		}
 	}
 }
@@ -726,6 +767,7 @@ impl<'a, T> LocatedStorage<'a, T> {
 	pub fn try_locate(&self, entity: Entity) -> Option<CompLocation<'a, T>> {
 		self.storage.get(entity).map(|value| CompLocation {
 			value,
+			entity,
 			key: self.key,
 		})
 	}
@@ -733,7 +775,15 @@ impl<'a, T> LocatedStorage<'a, T> {
 	pub fn locate(&self, entity: Entity) -> CompLocation<'a, T> {
 		CompLocation {
 			value: &self.storage[entity],
+			entity,
 			key: self.key,
+		}
+	}
+
+	pub fn get_run(&self, archetype: ArchetypeId) -> LocatedStorageRun<'a, T> {
+		LocatedStorageRun {
+			key: self.key,
+			run: self.storage.get_run_view(archetype),
 		}
 	}
 
@@ -782,7 +832,7 @@ impl<'a, T> IndexMut<Entity> for LocatedStorage<'a, T> {
 	}
 }
 
-impl<'a, T> StorageView for LocatedStorage<'a, T> {
+impl<'a, T> StorageLike for LocatedStorage<'a, T> {
 	type Comp = T;
 
 	fn get(&self, entity: Entity) -> Option<&Self::Comp> {
@@ -796,10 +846,38 @@ impl<'a, T> StorageView for LocatedStorage<'a, T> {
 	}
 }
 
-impl<'a, T> StorageViewMut for LocatedStorage<'a, T> {
+impl<'a, T> StorageLikeMut for LocatedStorage<'a, T> {
 	fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Comp> {
 		// Name resolution prioritizes inherent method of the same name.
 		self.get_mut(entity)
+	}
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct LocatedStorageRun<'a, T> {
+	key: u64,
+	run: StorageRunView<'a, UnsafeCell<T>>,
+}
+
+impl<'a, T> LocatedStorageRun<'a, T> {
+	pub fn run(&self) -> StorageRunView<'a, UnsafeCell<T>> {
+		self.run
+	}
+
+	pub fn try_locate(&self, entity: Entity) -> Option<CompLocation<'a, T>> {
+		self.run.try_get(entity).map(|value| CompLocation {
+			value,
+			entity,
+			key: self.key,
+		})
+	}
+
+	pub fn locate(&self, entity: Entity) -> CompLocation<'a, T> {
+		CompLocation {
+			value: &self.run.get(entity),
+			entity,
+			key: self.key,
+		}
 	}
 }
 
@@ -807,5 +885,16 @@ impl<'a, T> StorageViewMut for LocatedStorage<'a, T> {
 #[derive_where(Copy, Clone)]
 pub struct CompLocation<'a, T> {
 	value: &'a UnsafeCell<T>,
+	entity: Entity,
 	key: u64,
+}
+
+impl<'a, T> CompLocation<'a, T> {
+	pub fn value(self) -> &'a UnsafeCell<T> {
+		self.value
+	}
+
+	pub fn entity(self) -> Entity {
+		self.entity
+	}
 }

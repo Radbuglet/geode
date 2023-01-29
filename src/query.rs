@@ -1,4 +1,4 @@
-use crate::{storage::StorageRunSlot, util::macros::impl_tuples};
+use crate::{storage::StorageSlot, util::macros::impl_tuples};
 
 use super::{ArchetypeId, Entity, Storage};
 
@@ -80,7 +80,7 @@ impl<'a, T> QueryPart for &'a Storage<T> {
 	}
 }
 
-pub struct StorageIterRef<'a, T>(iter::Enumerate<slice::Iter<'a, StorageRunSlot<T>>>);
+pub struct StorageIterRef<'a, T>(iter::Enumerate<slice::Iter<'a, StorageSlot<T>>>);
 
 impl<'a, T> QueryPartIter for StorageIterRef<'a, T> {
 	type Value = &'a T;
@@ -109,7 +109,7 @@ impl<'a, T> QueryPart for &'a mut Storage<T> {
 	}
 }
 
-pub struct StorageIterMut<'a, T>(iter::Enumerate<slice::IterMut<'a, StorageRunSlot<T>>>);
+pub struct StorageIterMut<'a, T>(iter::Enumerate<slice::IterMut<'a, StorageSlot<T>>>);
 
 impl<'a, T> QueryPartIter for StorageIterMut<'a, T> {
 	type Value = &'a mut T;

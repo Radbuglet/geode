@@ -20,7 +20,7 @@ pub mod prelude {
 		},
 		event::{func, injectors, DestroyQueue, EntityDestroyEvent, EventQueue, EventQueueIter},
 		query::Query,
-		storage::{Storage, StorageView, StorageViewMut},
+		storage::{Storage, StorageLike, StorageLikeMut},
 		universe::{BypassExclusivity, ExclusiveUniverse, Universe},
 	};
 }

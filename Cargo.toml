@@ -8,7 +8,7 @@ compost = { git = "https://github.com/Radbuglet/compost.git", rev = "6b029d6b453
 derive-where = "1.0.0"
 fastrand = "1.8.0"
 fnv = "1.0.3"
-hibitset = "0.6.3"
+hibitset = { version = "0.6.3", default-features = false }
 log = "0.4.17"
 parking_lot = "0.12.1"
 

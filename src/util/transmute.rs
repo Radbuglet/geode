@@ -254,6 +254,12 @@ impl<T: Clone> Clone for TransVec<T> {
 	}
 }
 
+impl<T> Default for TransVec<T> {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl<T> TransVec<T> {
 	pub fn new() -> Self {
 		Self::from_vec(Vec::new())
