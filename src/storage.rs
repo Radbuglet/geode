@@ -202,7 +202,7 @@ impl<T> Storage<T> {
 		}
 	}
 
-	pub fn as_celled(&mut self) -> &mut StorageRun<UnsafeCell<T>> {
+	pub fn as_celled(&mut self) -> &mut Storage<UnsafeCell<T>> {
 		unsafe { self.transmute_mut_via_ptr(|p| p.cast()) }
 	}
 
