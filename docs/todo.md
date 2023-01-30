@@ -6,6 +6,12 @@
 - [x] Implement `WeakArchetype`
 - [x] Implement `WeakArchetypeMap`
 - [x] Implement universal archetype annotations
+- [x] Implement `&mut Storage<T>` to `&mut Storage<UnsafeCell<T>>` conversion
+  - [x] Implement `LocatedStorage`
+  - [ ] Implement `RefCelledStorage`
+  - [ ] Allow wrappers to be mapped without losing their original functionality
+  - [ ] Update the query system
+- [ ] Expose `Archetype::spawn_push`, `Archetype::spawn_in_slot`, `Archetype::len`, and `Archetype::iter`
 - [ ] Implement `WeakEntity` as well
 - [ ] Add support for late-initialized and nested `bundle!` components
 - [ ] Allow `EventQueueIter` to be reiterated and polled on individual archetypes
@@ -37,15 +43,9 @@
 
 ##### Multi-Threading
 
-- [ ] Improve `Storage` flexibility:
-  - [x] Implement `&mut Storage<T>` to `&mut Storage<UnsafeCell<T>>` conversion
-  - [x] Implement `LocatedStorage`
-  - [ ] Implement `RefCelledStorage`
-  - [ ] Allow wrappers to be mapped without losing their original functionality
+- [ ] Implement multi-threaded querying.
   - [ ] Implement transparent sharding
-  - [ ] Update the query system
   - [ ] Rayon integration
-- [ ] Expose `Archetype::spawn_push`, `Archetype::spawn_in_slot`, `Archetype::len`, and `Archetype::iter`
 - [ ] Implement regular scheduling:
   - [ ] Implement `Scheduler`
   - [ ] Implement `AsyncProvider`

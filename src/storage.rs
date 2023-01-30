@@ -668,6 +668,43 @@ impl<T> StorageRun<T> {
 	}
 }
 
+impl<T> ops::Index<Entity> for StorageRun<T> {
+	type Output = T;
+
+	fn index(&self, entity: Entity) -> &Self::Output {
+		self.get(entity)
+			.unwrap_or_else(|| failed_to_find_component::<T>(entity))
+	}
+}
+
+impl<T> ops::IndexMut<Entity> for StorageRun<T> {
+	fn index_mut(&mut self, entity: Entity) -> &mut Self::Output {
+		self.get_mut(entity)
+			.unwrap_or_else(|| failed_to_find_component::<T>(entity))
+	}
+}
+
+impl<T> StorageLike for StorageRun<T> {
+	type Comp = T;
+
+	fn get(&self, entity: Entity) -> Option<&Self::Comp> {
+		// Name resolution prioritizes inherent method of the same name.
+		self.get(entity)
+	}
+
+	fn has(&self, entity: Entity) -> bool {
+		// Name resolution prioritizes inherent method of the same name.
+		self.has(entity)
+	}
+}
+
+impl<T> StorageLikeMut for StorageRun<T> {
+	fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Comp> {
+		// Name resolution prioritizes inherent method of the same name.
+		self.get_mut(entity)
+	}
+}
+
 // === StorageRunSlot === //
 
 pub type StorageSlotSlice<T> = [StorageSlot<T>];
