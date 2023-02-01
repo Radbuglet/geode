@@ -8,7 +8,7 @@ use derive_where::derive_where;
 
 use crate::{ArchetypeId, Entity, Storage, StorageView, StorageViewMut};
 
-use super::core::StorageRunView;
+use super::container::StorageRunView;
 
 pub trait StorageWrapper<'r> {
 	type Comp;

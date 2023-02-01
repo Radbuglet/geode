@@ -56,10 +56,6 @@ where
 
 // === Core traits === //
 
-pub trait BackingStorage {
-	type Comp: ?Sized;
-}
-
 pub trait StorageView: ops::Index<Entity, Output = Self::Comp> {
 	type Comp: ?Sized;
 

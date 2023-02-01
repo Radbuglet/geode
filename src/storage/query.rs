@@ -2,7 +2,7 @@ use std::{iter, slice};
 
 use crate::{util::macros::impl_tuples, ArchetypeId, Entity, Storage};
 
-use super::core::StorageSlot;
+use super::container::StorageSlot;
 
 // === Core === //
 
