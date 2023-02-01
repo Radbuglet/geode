@@ -1,190 +1,21 @@
-use std::{
-	any::type_name,
-	cell::UnsafeCell,
-	fmt::Debug,
-	mem,
-	ops::{self, Index, IndexMut},
-	sync::atomic::{AtomicU64, Ordering},
-};
+use std::{any::type_name, cell::UnsafeCell, mem, ops};
 
 use derive_where::derive_where;
 
 use crate::{
-	debug::lifetime::{DebugLifetime, DebugLifetimeWrapper, Dependent},
+	debug::lifetime::{DebugLifetime, DebugLifetimeWrapper},
 	entity::hashers::ArchetypeBuildHasher,
-	query::{QueryIter, StorageIterMut, StorageIterRef},
 	util::{
 		ptr::PointeeCastExt,
 		transmute::{TransMap, TransVec},
 	},
-	ArchetypeId, Entity, Query,
+	ArchetypeId, Dependent, Entity, Query, StorageView, StorageViewMut,
 };
 
-// === StorageLike === //
-
-pub trait StorageLike: ops::Index<Entity, Output = Self::Comp> {
-	type Comp: ?Sized;
-
-	fn get(&self, entity: Entity) -> Option<&Self::Comp>;
-
-	fn has(&self, entity: Entity) -> bool;
-
-	fn map_ref<M: RefMapper<Self::Comp>>(&self, mapper: M) -> MappedStorageRef<'_, Self, M> {
-		MappedStorageRef {
-			storage: self,
-			mapper,
-		}
-	}
-}
-
-pub trait StorageLikeMut: StorageLike + ops::IndexMut<Entity, Output = Self::Comp> {
-	fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Comp>;
-
-	fn map_mut<M: MutMapper<Self::Comp>>(&mut self, mapper: M) -> MappedStorageMut<'_, Self, M> {
-		MappedStorageMut {
-			storage: self,
-			mapper,
-		}
-	}
-}
-
-pub trait RefMapper<I: ?Sized> {
-	type Out: ?Sized;
-
-	fn map_ref<'r>(&self, i: &'r I) -> &'r Self::Out;
-}
-
-impl<I, O, F> RefMapper<I> for F
-where
-	I: ?Sized,
-	O: ?Sized,
-	F: Fn(&I) -> &O,
-{
-	type Out = O;
-
-	fn map_ref<'r>(&self, v: &'r I) -> &'r Self::Out {
-		(self)(v)
-	}
-}
-
-pub type FnPtrMapper<A, B> = (fn(&A) -> &B, fn(&mut A) -> &mut B);
-
-pub trait MutMapper<I: ?Sized>: RefMapper<I> {
-	fn map_mut<'r>(&self, v: &'r mut I) -> &'r mut Self::Out;
-}
-
-impl<I, O, F1, F2> RefMapper<I> for (F1, F2)
-where
-	I: ?Sized,
-	O: ?Sized,
-	F1: Fn(&I) -> &O,
-{
-	type Out = O;
-
-	fn map_ref<'r>(&self, v: &'r I) -> &'r Self::Out {
-		(self.0)(v)
-	}
-}
-
-impl<I, O, F1, F2> MutMapper<I> for (F1, F2)
-where
-	I: ?Sized,
-	O: ?Sized,
-	F1: Fn(&I) -> &O,
-	F2: Fn(&mut I) -> &mut O,
-{
-	fn map_mut<'r>(&self, v: &'r mut I) -> &'r mut Self::Out {
-		(self.1)(v)
-	}
-}
-
-#[derive(Debug)]
-pub struct MappedStorageRef<'a, S: ?Sized, M> {
-	pub storage: &'a S,
-	pub mapper: M,
-}
-
-impl<'a, S, M> ops::Index<Entity> for MappedStorageRef<'a, S, M>
-where
-	S: ?Sized + StorageLike,
-	M: RefMapper<S::Comp>,
-{
-	type Output = M::Out;
-
-	fn index(&self, entity: Entity) -> &Self::Output {
-		self.mapper.map_ref(&self.storage[entity])
-	}
-}
-
-impl<'a, S, M> StorageLike for MappedStorageRef<'a, S, M>
-where
-	S: ?Sized + StorageLike,
-	M: RefMapper<S::Comp>,
-{
-	type Comp = M::Out;
-
-	fn get(&self, entity: Entity) -> Option<&Self::Comp> {
-		self.storage.get(entity).map(|v| self.mapper.map_ref(v))
-	}
-
-	fn has(&self, entity: Entity) -> bool {
-		self.storage.has(entity)
-	}
-}
-
-#[derive(Debug)]
-pub struct MappedStorageMut<'a, S: ?Sized, M> {
-	pub storage: &'a mut S,
-	pub mapper: M,
-}
-
-impl<'a, S, M> ops::Index<Entity> for MappedStorageMut<'a, S, M>
-where
-	S: ?Sized + StorageLike,
-	M: RefMapper<S::Comp>,
-{
-	type Output = M::Out;
-
-	fn index(&self, entity: Entity) -> &Self::Output {
-		self.mapper.map_ref(&self.storage[entity])
-	}
-}
-
-impl<'a, S, M> ops::IndexMut<Entity> for MappedStorageMut<'a, S, M>
-where
-	S: ?Sized + StorageLikeMut,
-	M: MutMapper<S::Comp>,
-{
-	fn index_mut(&mut self, entity: Entity) -> &mut Self::Output {
-		self.mapper.map_mut(&mut self.storage[entity])
-	}
-}
-
-impl<'a, S, M> StorageLike for MappedStorageMut<'a, S, M>
-where
-	S: ?Sized + StorageLike,
-	M: RefMapper<S::Comp>,
-{
-	type Comp = M::Out;
-
-	fn get(&self, entity: Entity) -> Option<&Self::Comp> {
-		self.storage.get(entity).map(|v| self.mapper.map_ref(v))
-	}
-
-	fn has(&self, entity: Entity) -> bool {
-		self.storage.has(entity)
-	}
-}
-
-impl<'a, S, M> StorageLikeMut for MappedStorageMut<'a, S, M>
-where
-	S: ?Sized + StorageLikeMut,
-	M: MutMapper<S::Comp>,
-{
-	fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Comp> {
-		self.storage.get_mut(entity).map(|v| self.mapper.map_mut(v))
-	}
-}
+use super::{
+	query::{QueryIter, StorageIterMut, StorageIterRef},
+	wrapper::StorageWrapper,
+};
 
 // === Storage === //
 
@@ -388,7 +219,7 @@ impl<T> ops::IndexMut<Entity> for Storage<T> {
 	}
 }
 
-impl<T> StorageLike for Storage<T> {
+impl<T> StorageView for Storage<T> {
 	type Comp = T;
 
 	fn get(&self, entity: Entity) -> Option<&Self::Comp> {
@@ -402,7 +233,7 @@ impl<T> StorageLike for Storage<T> {
 	}
 }
 
-impl<T> StorageLikeMut for Storage<T> {
+impl<T> StorageViewMut for Storage<T> {
 	fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Comp> {
 		// Name resolution prioritizes inherent method of the same name.
 		self.get_mut(entity)
@@ -684,7 +515,7 @@ impl<T> ops::IndexMut<Entity> for StorageRun<T> {
 	}
 }
 
-impl<T> StorageLike for StorageRun<T> {
+impl<T> StorageView for StorageRun<T> {
 	type Comp = T;
 
 	fn get(&self, entity: Entity) -> Option<&Self::Comp> {
@@ -698,7 +529,7 @@ impl<T> StorageLike for StorageRun<T> {
 	}
 }
 
-impl<T> StorageLikeMut for StorageRun<T> {
+impl<T> StorageViewMut for StorageRun<T> {
 	fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Comp> {
 		// Name resolution prioritizes inherent method of the same name.
 		self.get_mut(entity)
@@ -768,170 +599,5 @@ impl<T> StorageSlot<T> {
 			StorageSlot::Full { value, .. } => Some(value),
 			StorageSlot::Empty => None,
 		}
-	}
-}
-
-// === Wrappers === //
-
-pub trait StorageWrapper<'r> {
-	type Comp;
-
-	fn wrap(storage: &'r mut Storage<Self::Comp>) -> Self;
-}
-
-#[derive(Debug)]
-pub struct LocatedStorage<'a, T> {
-	storage: &'a Storage<UnsafeCell<T>>,
-	key: u64,
-}
-
-// TODO: Implement `LocatedStorageRun` for even more performance gains.
-
-impl<'a, T> StorageWrapper<'a> for LocatedStorage<'a, T> {
-	type Comp = T;
-
-	fn wrap(storage: &'a mut Storage<Self::Comp>) -> Self {
-		static KEY_GEN: AtomicU64 = AtomicU64::new(0);
-
-		Self {
-			storage: storage.as_celled(),
-			key: KEY_GEN.fetch_add(1, Ordering::Relaxed),
-		}
-	}
-}
-
-impl<'a, T> LocatedStorage<'a, T> {
-	pub fn try_locate(&self, entity: Entity) -> Option<CompLocation<'a, T>> {
-		self.storage.get(entity).map(|value| CompLocation {
-			value,
-			entity,
-			key: self.key,
-		})
-	}
-
-	pub fn locate(&self, entity: Entity) -> CompLocation<'a, T> {
-		CompLocation {
-			value: &self.storage[entity],
-			entity,
-			key: self.key,
-		}
-	}
-
-	pub fn get_run(&self, archetype: ArchetypeId) -> LocatedStorageRun<'a, T> {
-		LocatedStorageRun {
-			key: self.key,
-			run: self.storage.get_run_view(archetype),
-		}
-	}
-
-	pub fn get(&self, entity: Entity) -> Option<&T> {
-		self.storage.get(entity).map(|v| unsafe { &*v.get() })
-	}
-
-	pub fn get_mut(&mut self, entity: Entity) -> Option<&mut T> {
-		self.storage.get(entity).map(|v| unsafe { &mut *v.get() })
-	}
-
-	pub fn has(&self, entity: Entity) -> bool {
-		self.storage.has(entity)
-	}
-}
-
-impl<'a, 'b: 'a, T> Index<CompLocation<'b, T>> for LocatedStorage<'a, T> {
-	type Output = T;
-
-	fn index(&self, loc: CompLocation<'b, T>) -> &Self::Output {
-		assert_eq!(self.key, loc.key);
-
-		unsafe { &*loc.value.get() }
-	}
-}
-
-impl<'a, 'b: 'a, T> IndexMut<CompLocation<'b, T>> for LocatedStorage<'a, T> {
-	fn index_mut(&mut self, loc: CompLocation<'b, T>) -> &mut Self::Output {
-		assert_eq!(self.key, loc.key);
-
-		unsafe { &mut *loc.value.get() }
-	}
-}
-
-impl<'a, T> Index<Entity> for LocatedStorage<'a, T> {
-	type Output = T;
-
-	fn index(&self, loc: Entity) -> &Self::Output {
-		unsafe { &*self.storage[loc].get() }
-	}
-}
-
-impl<'a, T> IndexMut<Entity> for LocatedStorage<'a, T> {
-	fn index_mut(&mut self, loc: Entity) -> &mut Self::Output {
-		unsafe { &mut *self.storage[loc].get() }
-	}
-}
-
-impl<'a, T> StorageLike for LocatedStorage<'a, T> {
-	type Comp = T;
-
-	fn get(&self, entity: Entity) -> Option<&Self::Comp> {
-		// Name resolution prioritizes inherent method of the same name.
-		self.get(entity)
-	}
-
-	fn has(&self, entity: Entity) -> bool {
-		// Name resolution prioritizes inherent method of the same name.
-		self.has(entity)
-	}
-}
-
-impl<'a, T> StorageLikeMut for LocatedStorage<'a, T> {
-	fn get_mut(&mut self, entity: Entity) -> Option<&mut Self::Comp> {
-		// Name resolution prioritizes inherent method of the same name.
-		self.get_mut(entity)
-	}
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct LocatedStorageRun<'a, T> {
-	key: u64,
-	run: StorageRunView<'a, UnsafeCell<T>>,
-}
-
-impl<'a, T> LocatedStorageRun<'a, T> {
-	pub fn run(&self) -> StorageRunView<'a, UnsafeCell<T>> {
-		self.run
-	}
-
-	pub fn try_locate(&self, entity: Entity) -> Option<CompLocation<'a, T>> {
-		self.run.try_get(entity).map(|value| CompLocation {
-			value,
-			entity,
-			key: self.key,
-		})
-	}
-
-	pub fn locate(&self, entity: Entity) -> CompLocation<'a, T> {
-		CompLocation {
-			value: &self.run.get(entity),
-			entity,
-			key: self.key,
-		}
-	}
-}
-
-#[derive(Debug)]
-#[derive_where(Copy, Clone)]
-pub struct CompLocation<'a, T> {
-	value: &'a UnsafeCell<T>,
-	entity: Entity,
-	key: u64,
-}
-
-impl<'a, T> CompLocation<'a, T> {
-	pub fn value(self) -> &'a UnsafeCell<T> {
-		self.value
-	}
-
-	pub fn entity(self) -> Entity {
-		self.entity
 	}
 }

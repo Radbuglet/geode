@@ -3,7 +3,6 @@
 pub mod debug;
 pub mod entity;
 pub mod event;
-pub mod query;
 pub mod storage;
 pub mod universe;
 mod util;
@@ -19,8 +18,7 @@ pub mod prelude {
 			EntitySet, SingleBundle, SingleEntity, WeakArchetypeId, WeakArchetypeMap,
 		},
 		event::{func, injectors, DestroyQueue, EntityDestroyEvent, EventQueue, EventQueueIter},
-		query::Query,
-		storage::{Storage, StorageLike, StorageLikeMut},
+		storage::{Query, Storage, StorageView, StorageViewMut},
 		universe::{BypassExclusivity, ExclusiveUniverse, Universe},
 	};
 }

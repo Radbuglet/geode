@@ -17,7 +17,7 @@ use crate::{
 	},
 	universe::BuildableArchetype,
 	util::{free_list::FreeList, no_hash::RandIdGen},
-	BypassExclusivity, Dependent, ExclusiveUniverse, Storage, StorageLike, StorageLikeMut,
+	BypassExclusivity, Dependent, ExclusiveUniverse, Storage, StorageView, StorageViewMut,
 	Universe,
 };
 
@@ -92,11 +92,11 @@ impl Entity {
 		self.slot as usize
 	}
 
-	pub fn comp<T>(self, storage: &impl StorageLike<Comp = T>) -> &T {
+	pub fn comp<T>(self, storage: &impl StorageView<Comp = T>) -> &T {
 		&storage[self]
 	}
 
-	pub fn comp_mut<T>(self, storage: &mut impl StorageLikeMut<Comp = T>) -> &mut T {
+	pub fn comp_mut<T>(self, storage: &mut impl StorageViewMut<Comp = T>) -> &mut T {
 		&mut storage[self]
 	}
 
@@ -157,11 +157,11 @@ impl<T> SingleEntity<T> {
 		SingleEntity::new(self.as_entity())
 	}
 
-	pub fn get<V: StorageLike<Comp = T>>(self, storage: &V) -> &T {
+	pub fn get<V: StorageView<Comp = T>>(self, storage: &V) -> &T {
 		&storage[self.as_entity()]
 	}
 
-	pub fn get_mut<V: StorageLikeMut<Comp = T>>(self, storage: &mut V) -> &mut T {
+	pub fn get_mut<V: StorageViewMut<Comp = T>>(self, storage: &mut V) -> &mut T {
 		&mut storage[self.as_entity()]
 	}
 

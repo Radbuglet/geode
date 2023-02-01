@@ -1,39 +1,29 @@
 # Geode To-Do
 
-##### Entity Model
+##### Storages
 
-- [x] Implement archetype registry in `Universe`
-- [x] Implement `WeakArchetype`
-- [x] Implement `WeakArchetypeMap`
-- [x] Implement universal archetype annotations
-- [x] Implement `&mut Storage<T>` to `&mut Storage<UnsafeCell<T>>` conversion
-  - [x] Implement `LocatedStorage`
-  - [ ] Implement `RefCelledStorage`
-  - [ ] Allow wrappers to be mapped without losing their original functionality
-  - [ ] Update the query system
+- [x] Re-organize `storage` into its own `storage` folder
+- [ ] Allow wrappers to be mapped without losing their original functionality
+- [ ] Implement sharding
+- [ ] Implement `RefCelledStorage`
+- [ ] Update the query system
+
+##### Entities
+
 - [ ] Expose `Archetype::spawn_push`, `Archetype::spawn_in_slot`, `Archetype::len`, and `Archetype::iter`
 - [ ] Implement `WeakEntity` as well
 - [ ] Add support for late-initialized and nested `bundle!` components
+
+##### Events
+
 - [ ] Allow `EventQueueIter` to be reiterated and polled on individual archetypes
+- [ ] Extract `ResourceManager` from `Universe`
+- [ ] Allow `func!` delegates to be taken statically
+- [ ] Implement standard destructor traits and delegates
+- [ ] Implement mechanisms for spawning from singleton archetypes
 
 ##### Convenience Extensions
 
-- [x] Allow `bundles` to spawn from an `ExclusiveUniverse`
-  - [x] Replace this feature with a method in the `Universe` to make it slightly safer
-- [x] Singleton bundles and entities
-  - [x] Move `bundle` to entity
-  - [x] Implement `SingleEntity`
-  - [x] Implement helper methods to access universe
-- [x] Implement dispatch utils:
-  - [x] Mechanisms to make writing delegates easier (e.g. a `func!` macro)
-  - [x] Method conversions in `func`
-  - [x] Add return types to `func`
-  - [ ] Ability to take `func` objects statically
-- [x] Implement `MappedStorage` and `StorageView` traits
-- [ ] Implement new destruction model:
-  - [ ] Implement standard destructor traits and delegates
-  - [ ] Implement `OwnedEntity`
-  - [ ] Implement `ResourceMap` on top of this
 - [ ] Clean up extension methods
 - [ ] Improve `compost`:
   - [ ] Allow unlimited `Deref` chains
@@ -43,14 +33,10 @@
 
 ##### Multi-Threading
 
-- [ ] Implement multi-threaded querying.
-  - [ ] Implement transparent sharding
-  - [ ] Rayon integration
-- [ ] Implement regular scheduling:
-  - [ ] Implement `Scheduler`
-  - [ ] Implement `AsyncProvider`
-  - [ ] Implement an `async` version of `Universe`
-  - [ ] Implement pool-based future executor
+- [ ] Implement multi-threaded querying via Rayon.
+- [ ] Implement `Scheduler`
+- [ ] Implement an `async` version of `Universe`
+- [ ] Implement pool-based future executor
 
 ##### Debug
 

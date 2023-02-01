@@ -1,8 +1,8 @@
-use crate::{storage::StorageSlot, util::macros::impl_tuples};
-
-use super::{ArchetypeId, Entity, Storage};
-
 use std::{iter, slice};
+
+use crate::{util::macros::impl_tuples, ArchetypeId, Entity, Storage};
+
+use super::core::StorageSlot;
 
 // === Core === //
 
