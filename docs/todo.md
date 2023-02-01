@@ -3,7 +3,7 @@
 ##### Storages
 
 - [x] Re-organize `storage` into its own `storage` folder
-- [ ] Allow wrappers to be mapped without losing their original functionality
+- [x] Allow wrappers to be mapped without losing their original functionality
 - [ ] Implement sharding
 - [ ] Implement `RefCelledStorage`
 - [ ] Update the query system

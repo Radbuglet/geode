@@ -8,7 +8,10 @@ use derive_where::derive_where;
 
 use crate::{ArchetypeId, Entity, Storage, StorageView, StorageViewMut};
 
-use super::container::StorageRunView;
+use super::{
+	container::StorageRunView,
+	view::{LocatedStorageView, LocatedStorageViewMut},
+};
 
 pub trait StorageWrapper<'r> {
 	type Comp;
@@ -124,6 +127,17 @@ impl<'a, T> StorageViewMut for LocatedStorage<'a, T> {
 		self.get_mut(entity)
 	}
 }
+
+impl<'a, T> LocatedStorageView<'a> for LocatedStorage<'a, T> {
+	type BackingComp = T;
+
+	fn locate(&self, entity: Entity) -> CompLocation<'a, Self::BackingComp> {
+		// Name resolution prioritizes inherent method of the same name.
+		self.locate(entity)
+	}
+}
+
+impl<'a, T> LocatedStorageViewMut<'a> for LocatedStorage<'a, T> {}
 
 #[derive(Debug, Copy, Clone)]
 pub struct LocatedStorageRun<'a, T> {
